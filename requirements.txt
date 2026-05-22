@@ -1,0 +1,23 @@
+# BBB Scraper — dependencies
+# Install: pip install -r requirements.txt
+
+# ── Core (required) ──────────────────────────────────────────────────────────
+# Primary scraper engine (verified working with Cloudflare bypass)
+undetected-chromedriver>=3.5.5
+selenium>=4.21.0
+
+# Local proxy relay for residential proxy authentication
+# Also run: mitmdump --listen-port 18080 & (to generate cert), then trust it
+mitmproxy>=11.0.0
+
+# ── Optional ─────────────────────────────────────────────────────────────────
+# CAPTCHA solving via 2captcha.com API
+2captcha-python>=1.2.1
+
+# Alternative scraper implementations (Playwright, Pyppeteer)
+# playwright>=1.44.0   # run: playwright install chromium
+# pyppeteer>=2.0.0
+
+# ── Known version constraints ─────────────────────────────────────────────────
+# selenium-wire 5.x is incompatible with pyOpenSSL>=26 — do not use
+# blinker must be downgraded if using selenium-wire: pip install blinker==1.7.0
