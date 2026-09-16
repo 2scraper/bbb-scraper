@@ -81,6 +81,17 @@ endpoint for it.
 - `scraper_api_client.py` requires `--cdp-url` on this site: its own exits
   are datacenter addresses and BBB refuses them.
 
+### Fixed before release
+
+- **`cf-turnstile` removed from the challenge-marker set.** It fired on
+  **five of five** pages BBB served when they were fetched through the
+  2Captcha Scraping Browser, because that product's auto-solve extension
+  injects its own hunters into every page it loads — and on only one of the
+  two real challenges. `/turnstile/v0/api.js` fired on nothing at all and is
+  removed with it; `challenges.cloudflare.com` is added. Only the signal
+  ordering in `detect_page_state` (the payload is checked before any marker)
+  kept a good page from being reported as a challenge.
+
 ### Not collected, deliberately
 
 BBB names a business's officers as individuals. There is no column for them

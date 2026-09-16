@@ -715,30 +715,74 @@ def pages_to_fetch(pages_requested: int, pages_available: Optional[int]) -> int:
 
 # Markers that mean a CLOUDFLARE CHALLENGE was rendered, and nothing else.
 #
-# The negative measurement matters more than the positive one here, and it is
-# CLAUDE.md §18's rule applied before the mistake rather than after it: BBB's
-# OWN served pages sit behind Cloudflare too, so the obvious markers are facts
-# about the site rather than evidence of a block. Counted 2026-09-16 on a page
-# BBB genuinely served (its 404, HTTP 404, 6.2 KB) against both interstitials:
+# The negative measurement matters more than the positive one here, and this
+# list has been WRONG once already — see the `cf-turnstile` note below, which
+# is CLAUDE.md §18's rule biting for the third time in this family.
 #
-#                            served 404   hard block   managed challenge
-#     challenge-platform          1            1              1-2      <- NOT a marker
-#     cdn-cgi                     1            1              1-2      <- NOT a marker
-#     cf_chl_opt                  0            0                7
-#     __cf_chl                    0            0                3
-#     turnstile                   0            0                2
-#     assets.bbb.org/m.bbb.org    3            0                0
+# Counted 2026-09-16 across every capture, where "served" means a page BBB
+# really answered with (five of them fetched through the 2Captcha Scraping
+# Browser, one through plain curl) and "refused" means one of its two 403s:
 #
-# So `challenge-platform` and `cdn-cgi` are deliberately absent from this
-# tuple. Adding either would report every page BBB serves as a challenge —
-# the `akamai`-on-Tokopedia mistake, which that repo shipped twice.
+#                              served (6)   challenge (2)   hard block
+#   cf_chl_opt                     0           7, 7              0
+#   __cf_chl                       0           3, 3              0
+#   cf-chl-                        0           1, 0              0
+#   challenges.cloudflare.com      0           1, 0              0
+#   cf-turnstile                 1 on 5!       1, 0              0     <- NOT a marker
+#   /turnstile/v0/api.js           0           0, 0              0     <- never fires
+#   challenge-platform          1 on the 404   2, 1              1     <- NOT a marker
+#   cdn-cgi                     1 on the 404   2, 1              1     <- NOT a marker
+#
+# Four entries are therefore deliberately ABSENT:
+#
+#   `challenge-platform` / `cdn-cgi`  are facts about BBB sitting behind
+#       Cloudflare at all. They appear on pages it serves normally, so either
+#       would report every page as a challenge — the akamai-on-Tokopedia
+#       mistake that repo shipped twice.
+#
+#   `cf-turnstile` is the obvious marker for a Turnstile and is MEASURED
+#       USELESS here, for a reason that has nothing to do with BBB: 2Captcha's
+#       own Scraping Browser auto-solve extension injects
+#       `chrome-extension://kjmkgkdkpedkejedfhmfcenooemhbpbo/content/captcha/
+#       turnstile/hunter.js` with `data-ts-input="cf-turnstile-response"` into
+#       EVERY page it loads. It fired on all five served pages fetched that
+#       way and on only one of the two real challenges. A marker that fires on
+#       good pages and misses half the bad ones is worse than no marker.
+#
+#       Note what is NOT done about it: the extension's script tags are not
+#       stripped before matching. §19 says to add that guard "only if your
+#       marker set can actually match one", and with `cf-turnstile` gone, none
+#       of the entries below matches anything that extension injects. Adding
+#       the strip would be dead code that looks load-bearing.
+#
+#   `/turnstile/v0/api.js` fires on nothing at all — 0 across every capture,
+#       served and refused alike. Dead weight, removed.
+#
+# `smoke_test.py` pins this: no entry below may appear on a page BBB served,
+# asserted against a listing fetched THROUGH the Scraping Browser, which is
+# the page kind that exposed the mistake.
 BOT_CHALLENGE_MARKERS = (
     "cf_chl_opt",
     "__cf_chl",
     "cf-chl-",
-    "cf-turnstile",
-    "/turnstile/v0/api.js",
+    "challenges.cloudflare.com",
 )
+
+# BBB HAS ITS OWN CAPTCHA, and it is not the one above.
+#
+# §18's "no challenge rendered is not no captcha configured": every page BBB
+# serves carries a reCAPTCHA **Enterprise** configuration, for its own forms
+# rather than for readers —
+#
+#     NEXT_PUBLIC_GOOGLE_RECAPTCHA_SITE_KEY
+#     https://www.google.com/recaptcha/enterprise.js?render=6Lfm-HorAAAAA…
+#
+# `render=<sitekey>` rather than `render=explicit` means v3/Enterprise, so if
+# it were ever rendered at a reader it would be scored invisibly rather than
+# shown as a checkbox. It is NOT in the marker set, because it is present on
+# every good page — it is recorded here so that the next person to meet a
+# reCAPTCHA on this site knows which variant it is before paying for a task
+# type. This scraper never touches the forms it guards.
 
 # What the hard refusal says. BBB serves it under its OWN branding — the
 # `<title>` is "You have been blocked | Better Business Bureau®" — so a title
