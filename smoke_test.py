@@ -883,7 +883,23 @@ def check_shared_calls_bind_against_the_real_signature():
                 owner, attr = direct[func.id]
             if owner is None:
                 continue
-            callee = getattr(owner, attr, None)
+            # A name that is NOT THERE is the loudest possible failure and
+            # this check used to swallow it: `getattr(..., None)` returned
+            # None, `not callable(None)` was true, and the call was skipped.
+            # Three calls into a page_flow API that does not exist in this
+            # repo -- comparable(), next_page_selector(),
+            # next_page_candidates(), all of them Tokopedia's, all arriving
+            # with copied code -- sat in two engines under a green run of
+            # this very function. Absent is not "nothing to bind".
+            if not hasattr(owner, attr):
+                check("%s.%s exists (called from %s:%d)"
+                      % (getattr(owner, "__name__", owner), attr,
+                         module + ".py", node.lineno),
+                      False,
+                      "the engine calls a name the shared module does not "
+                      "define; a live run reaches this as AttributeError")
+                continue
+            callee = getattr(owner, attr)
             if not callable(callee) or inspect.isclass(callee):
                 continue
             try:

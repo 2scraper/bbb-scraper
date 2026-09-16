@@ -57,6 +57,16 @@ When it does, the release notes lead with it.
 
 ### Added
 
+- **The signature-binding check no longer swallows a name that is absent.**
+  It resolved the callee with `getattr(owner, attr, None)` and skipped
+  anything that came back not-callable — so a call into a shared module
+  function that **does not exist** was treated as "nothing to bind" rather
+  than as the loudest failure available. That is how three calls into a
+  `page_flow` API this repo does not have sat in two engines under a green
+  run of that very check. Absent is now a failure, naming the caller and its
+  line. Verified by control: adding a call to `page_flow.does_not_exist()`
+  turns the suite red.
+
 - **`check_captcha_capability_claims_match_the_code`** — a guard in both
   directions. It fails the build on a documented claim that a captcha cannot
   be solved, and on a README that credits a Turnstile solve to this repo
