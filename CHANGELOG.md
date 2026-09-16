@@ -8,6 +8,37 @@ CLI toolkit can. A PATCH release means fixes — it does not promise that every
 flag and default is frozen, so a behaviour-changing default can appear in one.
 When it does, the release notes lead with it.
 
+## [1.0.1] — 2026-09-16
+
+> **A marker was wrong, and it was one that could have cost money.**
+> `cf-turnstile` fired on **five of five** pages BBB actually served. Only
+> the signal ordering in `detect_page_state` kept a good page from being
+> reported as a challenge — and `challenge` is a state that spends.
+
+### Fixed
+
+- **`cf-turnstile` removed from `BOT_CHALLENGE_MARKERS`.** It fires on every
+  page fetched through the 2Captcha Scraping Browser, because that product's
+  auto-solve extension injects its own hunters into every page it loads —
+  and it missed one of the two real challenges. `/turnstile/v0/api.js`
+  removed with it: 0 occurrences anywhere, served or refused.
+  `challenges.cloudflare.com` added.
+- The marker guard in `smoke_test.py` had been passing for the WRONG reason
+  — it ran only against BBB's 404, fetched with plain curl, which carries no
+  extension injection. It now also runs against a listing fetched THROUGH
+  the Scraping Browser, and asserts in both directions: no marker on a
+  served page, every marker firing on a real challenge, and each excluded
+  string really present on a served page.
+
+### Documented
+
+- **BBB's own captcha**, which is not the one above: every served page
+  carries a reCAPTCHA **Enterprise** configuration
+  (`render=<sitekey>`, so v3 rather than a v2 checkbox) guarding its review
+  and complaint forms. This scraper never touches those forms.
+
+[1.0.1]: https://github.com/2scraper/bbb-scraper/releases/tag/v1.0.1
+
 ## [1.0.0] — 2026-09-16
 
 First release of the rewritten scraper. Everything before this was four
@@ -80,17 +111,6 @@ endpoint for it.
   on the development machine; `--chromium-path` points it at another one.
 - `scraper_api_client.py` requires `--cdp-url` on this site: its own exits
   are datacenter addresses and BBB refuses them.
-
-### Fixed before release
-
-- **`cf-turnstile` removed from the challenge-marker set.** It fired on
-  **five of five** pages BBB served when they were fetched through the
-  2Captcha Scraping Browser, because that product's auto-solve extension
-  injects its own hunters into every page it loads — and on only one of the
-  two real challenges. `/turnstile/v0/api.js` fired on nothing at all and is
-  removed with it; `challenges.cloudflare.com` is added. Only the signal
-  ordering in `detect_page_state` (the payload is checked before any marker)
-  kept a good page from being reported as a challenge.
 
 ### Not collected, deliberately
 
