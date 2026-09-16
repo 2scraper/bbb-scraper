@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "bbb-scraper"
-version = "1.0.0"
+version = "1.0.1"
 description = "Better Business Bureau (bbb.org) scraper: keyword searches, category listings and business profiles."
 readme = "README.md"
 license = "MIT"
