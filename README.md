@@ -1,233 +1,277 @@
-# BBB Scraper
+# bbb-scraper
 
-Free, open-source scraper for [Better Business Bureau (bbb.org)](https://www.bbb.org).
-Extracts business listings including name, phone, address, BBB rating, accreditation
-status, category, reviews, complaints, and more.
+[![release](https://img.shields.io/github/v/release/2scraper/bbb-scraper)](https://github.com/2scraper/bbb-scraper/releases)
+[![tests](https://github.com/2scraper/bbb-scraper/actions/workflows/tests.yml/badge.svg)](https://github.com/2scraper/bbb-scraper/actions/workflows/tests.yml)
+[![canary](https://github.com/2scraper/bbb-scraper/actions/workflows/canary.yml/badge.svg)](https://github.com/2scraper/bbb-scraper/actions/workflows/canary.yml)
+![python](https://img.shields.io/badge/python-3.9%20%7C%203.12-blue)
+[![licence](https://img.shields.io/badge/licence-MIT-green)](LICENSE)
+![engines](https://img.shields.io/badge/engines-playwright%20%7C%20selenium%20%7C%20pyppeteer-lightgrey)
+![runs without an account](https://img.shields.io/badge/search%20%26%20category-no%20account%20needed-brightgreen)
 
-**GitHub:** [github.com/2scraper/bbb-scraper](https://github.com/2scraper/bbb-scraper)
+Scrapes business listings and business profiles from the **Better Business
+Bureau** ([bbb.org](https://www.bbb.org)) — name, address, phone numbers, BBB
+letter grade, accreditation, categories, coordinates, and on a profile the
+accreditation date, years in business and complaint counts.
 
----
-
-## Cloudflare protection — important
-
-BBB uses **Cloudflare Managed Challenge** which blocks all standard automation tools
-(Playwright, Selenium, camoufox, curl-cffi, undetected-chromedriver alone).
-
-**The only verified working approach:**
-
-```
-Chrome (undetected-chromedriver)
-  → localhost:18080 (mitmproxy relay, adds proxy auth)
-    → residential proxy (2captcha/2prx)
-      → bbb.org
-```
-
-Cloudflare passes residential IPs automatically without any challenge.
+Three engines (Playwright, Selenium, pyppeteer) plus a browserless client for
+2Captcha's Scraper API. One row schema, one exit-code contract, one sidecar.
 
 ---
 
-## Quick start
+## Start with the part most scrapers bury
 
-### 1. Install
+**You do not need an account, a key or a proxy to read BBB's listings.**
+
+BBB's own front end renders search and category pages out of a JSON endpoint,
+and that endpoint is not behind Cloudflare. Measured **2026-09-16** from a
+datacenter VPS in Nuremberg (netcup, AS197540) — an address that gets HTTP
+**403 on every HTML page on the site**:
+
+```
+GET https://www.bbb.org/api/search?find_country=USA&find_text=restaurants
+    &find_loc=New%20York%2C%20NY&page=1     ->  HTTP 200, 57 KB of JSON
+```
+
+Fifteen complete business records, richer than the rendered tile. A two-page
+run from that machine with no `.env` at all returned **30 rows,
+`status: complete`**.
+
+What the 2Captcha products actually buy here is **`--mode profile`**. A
+business profile page IS Cloudflare-gated, and there is no endpoint for it —
+`/api/businessprofile`, `/api/profile`, `/api/orgs`, `/api/reviews` and
+`/api/complaints` all return BBB's 404 page — so the rendered page is the only
+route to accreditation dates, complaint counts and the rest.
+
+| | listings (`search`, `category`) | profiles (`profile`) |
+|---|---|---|
+| Cloudflare | **not gated** | gated, HTTP 403 |
+| needs a key | no | no |
+| needs a residential exit | **no** | **yes** |
+| measured from a datacenter IP | 200, 30 rows, complete | 403 |
+
+---
+
+## Install
 
 ```bash
 git clone https://github.com/2scraper/bbb-scraper.git
 cd bbb-scraper
-pip install undetected-chromedriver mitmproxy 2captcha-python
+pip install -r requirements.txt -r requirements-playwright.txt
+playwright install chromium
 ```
 
-### 2. One-time: trust mitmproxy certificate
+**Install exactly one engine.** The three declare mutually unsatisfiable pins
+— playwright and pyppeteer disagree on `pyee`, pyppeteer and selenium on
+`urllib3` — so `pip check` reports a conflict if you install more than one.
+Use a virtualenv per engine if you need several.
 
-This prevents Chrome from showing a security warning on every run.
+## Run
 
 ```bash
-# Generate the certificate (run once, Ctrl-C after a second)
-mitmdump --listen-port 18080 &
-sleep 2 && kill %1
+# a keyword search, three pages
+python playwright_scraper.py --text restaurants --location "New York, NY" --pages 3
 
-# Trust it in macOS keychain
-sudo security add-trusted-cert -d -r trustRoot \
-    -k /Library/Keychains/System.keychain \
-    ~/.mitmproxy/mitmproxy-ca-cert.pem
+# a category listing
+python playwright_scraper.py --mode category \
+    --url "https://www.bbb.org/us/category/restaurants" --pages 3
+
+# one business profile (this is the one that needs a residential exit)
+python playwright_scraper.py --mode profile \
+    --url "https://www.bbb.org/us/ny/bronx/profile/cleaning-services/proclean-maintenance-systems-inc-0121-134716"
+
+# Canada
+python playwright_scraper.py --country CAN --text plumbers --location "Toronto, ON"
 ```
 
-### 3. Run
-
-```bash
-chmod +x run_with_proxy.sh
-
-./run_with_proxy.sh \
-  'http://USER:PASS@PROXY_HOST:PORT' \
-  'restaurants' \
-  'New York, NY'
-```
-
-Output is saved to `bbb_results.json` by default.
+Output: `bbb_businesses.json`, `bbb_businesses.csv` and a
+`bbb_businesses.meta.json` sidecar describing the run. See
+[`sample_output.json`](sample_output.json) — 10 rows, 53 columns, cut from a
+real run.
 
 ---
 
-## Usage
+## Four things about BBB that will look like bugs
 
-### Search mode (keyword + location)
+Each of these is the site, not the scraper, and each is measured.
 
-```bash
-./run_with_proxy.sh 'http://user:pass@host:port' 'restaurants' 'New York, NY'
-./run_with_proxy.sh 'http://user:pass@host:port' 'plumbers' 'Chicago, IL' \
-    --output plumbers.csv --max-pages 10
-./run_with_proxy.sh 'http://user:pass@host:port' 'lawyers' 'Los Angeles, CA' \
-    --enrich --output lawyers.json
-```
+### 1. "Best Match" is not a relevance ordering — it is an accredited placement
 
-### Category mode (full category browse)
+BBB's own default sort returned **15 of 15 BBB Accredited businesses** on
+every page tried, and for `find_text=restaurants` returned cleaning services,
+hotel management and home improvement — **not one restaurant**. The same query
+under A-Z returned **0 of 15 accredited** and real name-matched restaurants.
 
-```bash
-# Find category URLs at https://www.bbb.org/us/categories
-python bbb_uc.py --mode category \
-    --category-url https://www.bbb.org/us/category/restaurants \
-    --proxy http://localhost:18080 \
-    --output restaurants.json
-```
+So **this scraper defaults to `--sort a-z`**, which is the one place it
+deliberately disagrees with the site. A-Z is also the only ordering that is
+stable between runs, which is what a multi-page run needs. Pass
+`--sort best-match` to reproduce what a visitor sees.
 
-### All flags (bbb_uc.py)
+`sort` is a **column**, not just a sidecar field, because it changes *which*
+businesses are in the file rather than only their order.
 
-| Flag | Description |
-|---|---|
-| `--mode` | `search` or `category` |
-| `--keyword` | Business type, e.g. `"restaurants"` (search mode) |
-| `--location` | City/state, e.g. `"New York, NY"` (search mode) |
-| `--category-url` | Category URL (category mode) |
-| `--output` | Output file: `.json` or `.csv` (default: `bbb_results.json`) |
-| `--max-pages` | Max pages to scrape; `0` = all |
-| `--proxy` | `http://host:port` — use `run_with_proxy.sh` for auth |
-| `--2captcha-key` | 2captcha.com API key (env: `APIKEY_2CAPTCHA`) |
-| `--chrome-version` | Chrome major version if uc can't detect it |
-| `--enrich` | Visit each profile page for full JSON-LD data |
-| `--headless` | Run Chrome without a window |
-| `--debug` | Save raw HTML snapshots to `debug/` |
+### 2. A complete run can still be a 1.2% sample
 
-### Extra flags via run_with_proxy.sh
+BBB caps **every** query at **15 pages of 15** — 225 rows — however many it
+matched. One measured search reported `totalResults: 19016` against
+`totalPages: 15`. A category listing reported 234,844.
 
-Any flags after the location are passed to `bbb_uc.py`:
-
-```bash
-./run_with_proxy.sh 'http://user:pass@host:port' 'dentists' 'Houston, TX' \
-    --output dentists.csv --max-pages 5 --enrich --debug
-```
-
----
-
-## Data fields
-
-### Listing (all modes)
-
-| Field | Source |
-|---|---|
-| `name` | `.result-business-name > a > span` |
-| `profile_url` | BBB profile link |
-| `phone` | `.result-business-info > div > div > a` |
-| `location` | `.result-business-info > div > div > p` |
-| `tagline` | Short description on card |
-| `logo` | Business logo URL |
-
-### With `--enrich` (visits each profile, reads JSON-LD)
-
-| Field | Source |
-|---|---|
-| `street` | `address.streetAddress` |
-| `city` | `address.addressLocality` |
-| `state` | `address.addressRegion` |
-| `zip` | `address.postalCode` |
-| `country` | `address.addressCountry` |
-| `latitude` / `longitude` | `geo.latitude` / `geo.longitude` |
-| `phone` | `telephone` (overrides listing value) |
-| `description` | Business description |
-| `founded_at` | `foundingDate` |
-| `site_url` | Business website (`a.dtm-url`) |
-| `rating` | `aggregateRating.ratingValue` |
-| `rating_count` | `aggregateRating.reviewCount` |
-
----
-
-## Output example
+The run is genuinely `status: complete`: it fetched everything BBB will serve
+for that query. The sidecar says both numbers and sets `capped_by_site`, so a
+consumer can tell "complete" from "exhaustive":
 
 ```json
-[
-  {
-    "name": "Joe's Pizza",
-    "profile_url": "https://www.bbb.org/us/ny/new-york/profile/pizza/...",
-    "phone": "(212) 555-0101",
-    "location": "123 Main St, New York, NY 10001",
-    "tagline": "Serving New York since 1985",
-    "logo": "https://www.bbb.org/logos/...",
-    "street": "123 Main St",
-    "city": "New York",
-    "state": "NY",
-    "zip": "10001",
-    "country": "US",
-    "latitude": 40.7128,
-    "longitude": -74.006,
-    "description": "Family-owned pizzeria...",
-    "founded_at": "1985",
-    "site_url": "https://joespizza.com",
-    "rating": "4.5",
-    "rating_count": "123"
-  }
-]
+{"status": "complete", "total_results": 19016, "pages_available": 15,
+ "capped_by_site": true, "reachable_max": 225}
 ```
 
+To go deeper, narrow the query: `--state NY` cut a 19,016-result search to
+6,693, and each slice gets its own 15 pages.
+
+Asking for page 16 answers **HTTP 500**, not an empty page — so the scraper
+plans against `totalPages` and never asks for it.
+
+### 3. An unrated business is not rated zero
+
+BBB returns `rating: ""` with `ratingScore: 0.0` for a business it has not
+graded — **7 of 105** measured. Written through, that zero drags every average
+a consumer computes, so both `rating_grade` and `rating_score` are **null**.
+
+The two columns are one rating in two notations. Measured over those 105 rows:
+
+```
+A+  >= 97.0      A  94.0-95.9      A-  92.9-93.8      B-  80.0
+```
+
+There is no `rating` column, because the rest of this repo family fills that
+with a 0-to-5 float off a star widget and 100.0 there would mean something
+else entirely.
+
+### 4. One business can appear twice, and both rows are real
+
+`sku` is `{bbbId}_{businessId}_{addressId}` and identifies a business **at a
+location**. "AV Brad Construction LLC" came back twice on one page of fifteen:
+same `businessId`, two `addressId`s, two real locations. Dedupe on `sku`;
+`businessId` legitimately repeats.
+
+A profile row rebuilds the same `sku`, so a profile run **joins** a listing
+run. (BBB's profile object states its own id as `0_209366`, with a literal
+zero where the listing writes the bbbId — a row keyed on that would never have
+matched anything.)
+
 ---
 
-## Proxy
+## Engines
 
-BBB requires **residential proxies** to bypass Cloudflare. Datacenter IPs are blocked
-immediately regardless of browser or tool.
+| | |
+|---|---|
+| `playwright_scraper.py` | **Primary.** The only one with `--concurrency`. Authenticates a proxy and a remote CDP endpoint. |
+| `selenium_scraper.py` | Drives the Chrome you already have. **Cannot authenticate a proxy or a remote CDP endpoint** (`debuggerAddress` is a bare `host:port`), so it refuses a credentialled `--cdp-endpoint` with exit 2 — which makes it the wrong engine for `--mode profile` and a perfectly good one for the two listing modes, which need no credentials. |
+| `puppeteer_scraper.py` | pyppeteer is effectively unmaintained and its own README points at Playwright. It downloads its **own Chromium**, which failed to launch on the development machine (`Browser closed unexpectedly`) — pass `--chromium-path` to point at another one. |
+| `scraper_api_client.py` | One HTTP request per page via the 2Captcha Scraper API, no local browser. Built for `--mode profile`. **`--cdp-url` is required**: measured 2026-09-16, the same profile URL came back 403 plain and **200 with the profile parsing in full** when routed through a Scraping Browser session, at $0.0005. |
 
-Get residential proxies at [2captcha.com/proxy](https://2captcha.com/proxy)
-(same service as [2prx.com](https://2prx.com)).
-
-`run_with_proxy.sh` handles proxy authentication automatically via mitmproxy.
+**All three browser engines produce the same rows.** Measured on three live
+runs of the identical query on 2026-09-16: Playwright and Selenium were
+**byte-identical** ignoring `scraped_at`; pyppeteer returned the identical 30
+`sku`s with two of them swapped — both "11400 Inc", one business at two
+addresses. BBB's A-Z ordering does not break a tie between two locations of
+one business deterministically, so **`position` describes one fetch, not the
+directory**. The `sku` set is stable, which is what `diff_runs.py` keys on.
 
 ---
 
-## CAPTCHA solving
+## What the 2Captcha products buy, and when
 
-If you encounter Turnstile challenges on other pages, pass your
-[2captcha.com](https://2captcha.com) API key:
+One key, four separately-billed products
+([2captcha.com](https://2captcha.com)):
+
+* **A residential proxy** (`--proxy`, `--proxy-file`) — the thing that makes
+  `--mode profile` work. BBB refuses a datacenter address: measured on the
+  development VPS, the same profile URL was refused **identically on six
+  consecutive polls over 30 seconds, byte for byte**, headless and headful,
+  bundled Chromium and real Chrome alike. No amount of browser patching
+  changes an ASN.
+* **The Scraping Browser API** (`--cdp-endpoint`) — a remote browser, so you
+  run none. This is what every live profile measurement in this README was
+  taken through. One live connection per `pid`, which is why `--concurrency`
+  is refused with it.
+* **Captcha solving** (`--twocaptcha-key`) — for the Managed Challenge only.
+  BBB refuses in two shapes and **only one of them is solvable**:
+
+  | | title | solvable |
+  |---|---|---|
+  | Managed Challenge | `Just a moment...` | yes — a real Turnstile widget |
+  | Hard block | `You have been blocked \| Better Business Bureau®` | **no** — no widget, no sitekey |
+
+  Both are HTTP 403 and both wear BBB's own branding, so the scrapers tell
+  them apart structurally. `--solve-captcha when-blocked` is the default and
+  the `blocked` state never spends.
+* **Fingerprints** (`--fingerprint`) — a consistent device identity for a
+  local browser. Ignored with `--cdp-endpoint`, which brings its own.
+
+Nothing here integrates a competitor.
+
+---
+
+## Exit codes
+
+| | |
+|---|---|
+| 0 | rows written |
+| 1 | crash |
+| 2 | bad usage |
+| 3 | blocked — Cloudflare, distinct from an empty result |
+| 4 | zero businesses — the query matched nothing |
+| 5 | remote API error (the Scraping Browser or Scraper API) |
+| 6 | partial — some pages came back and some did not |
+
+**A run that finds nothing writes nothing**, so a failure never replaces last
+night's good output with `[]`. `--allow-empty` is the opt-out.
+
+---
+
+## Configuration
+
+Credentials live in `.env` next to the scripts, never on a command line — a
+secret in `argv` is readable by anything that can run `ps`. Copy
+[`.env.example`](.env.example) and fill in what you use; `python3 env_config.py`
+prints what was picked up **without printing secrets**.
+
+Precedence: explicit flag → exported environment variable → `.env` → default.
+
+---
+
+## Tests
 
 ```bash
-export APIKEY_2CAPTCHA="your_key"
-./run_with_proxy.sh 'http://user:pass@host:port' 'lawyers' 'Seattle, WA'
+python3 smoke_test.py          # 337 offline checks, no network, no engine needed
+python3 smoke_test.py -v       # every check as it passes
+pytest                          # the same suite, one test
 ```
 
----
+The suite runs with no engine library installed and records every skip. CI
+installs each engine in its own virtualenv and fails if that engine's group
+reports one, because "skipped, engine absent" reads identically to a real
+import error.
 
-## Anti-detect browser
-
-For large-scale operations: [2captcha.com/anti-detect-browser](https://2captcha.com/anti-detect-browser)
-
----
-
-## Known issues
-
-| Issue | Fix |
-|---|---|
-| `ChromeDriver version mismatch` | Pass `--chrome-version 148` (your Chrome version) |
-| `selenium-wire` incompatible with pyOpenSSL>=26 | Use `run_with_proxy.sh` + mitmproxy instead |
-| Chrome shows certificate warning | Trust mitmproxy cert (see Quick Start step 2) |
-| `blinker._saferef` error | `pip install blinker==1.7.0` |
-| IP banned ("You have been blocked") | Switch proxy region or wait — the IP rotates |
+The [canary](.github/workflows/canary.yml) runs a real 3-page listing daily —
+**with no secrets**, because the listing path needs none, which is also what
+keeps that claim honest. The profile half skips with a notice when no
+`BBB_CDP_ENDPOINT` secret is set.
 
 ---
 
-## License
+## Legal
 
-MIT
+This reads **public pages** on bbb.org: search results, category listings and
+business profiles — the same pages a visitor sees, at a visitor's pace.
 
----
+It does not read anything behind a login, and it deliberately does **not**
+collect the named individuals BBB lists as a business's officers. There is no
+column for them: republishing a named person's details is a separate act from
+the site showing them on its own page.
 
-## Related
+Rate limits, terms of service and the legality of scraping in your
+jurisdiction are your responsibility as the operator. `--delay` defaults to 2
+seconds; leave it there unless you have a reason.
 
-- [2captcha.com](https://2captcha.com) — CAPTCHA solving API
-- [2captcha.com/proxy](https://2captcha.com/proxy) — Residential proxies
-- [2captcha.com/anti-detect-browser](https://2captcha.com/anti-detect-browser) — Anti-detect browser
-- [github.com/2scraper](https://github.com/2scraper) — More open-source scrapers
+MIT licensed. Not affiliated with or endorsed by the Better Business Bureau.

@@ -1,23 +1,21 @@
-# BBB Scraper — dependencies
-# Install: pip install -r requirements.txt
+# bbb-scraper — core dependencies
+#
+#   pip install -r requirements.txt
+#
+# Needed by everything, including the two browserless clients
+# (scraper_api_client.py, fingerprint_client.py) and the offline test suite.
+beautifulsoup4>=4.12.0
+requests>=2.31.0
 
-# ── Core (required) ──────────────────────────────────────────────────────────
-# Primary scraper engine (verified working with Cloudflare bypass)
-undetected-chromedriver>=3.5.5
-selenium>=4.21.0
-
-# Local proxy relay for residential proxy authentication
-# Also run: mitmdump --listen-port 18080 & (to generate cert), then trust it
-mitmproxy>=11.0.0
-
-# ── Optional ─────────────────────────────────────────────────────────────────
-# CAPTCHA solving via 2captcha.com API
-2captcha-python>=1.2.1
-
-# Alternative scraper implementations (Playwright, Pyppeteer)
-# playwright>=1.44.0   # run: playwright install chromium
-# pyppeteer>=2.0.0
-
-# ── Known version constraints ─────────────────────────────────────────────────
-# selenium-wire 5.x is incompatible with pyOpenSSL>=26 — do not use
-# blinker must be downgraded if using selenium-wire: pip install blinker==1.7.0
+# Then install exactly ONE engine — see the file per engine:
+#
+#   pip install -r requirements-playwright.txt && playwright install chromium
+#   pip install -r requirements-selenium.txt
+#   pip install -r requirements-puppeteer.txt
+#
+# Install one, not all three. playwright and pyppeteer declare mutually
+# unsatisfiable pins (pyee <12 vs >=13), and pyppeteer and selenium collide on
+# urllib3 (<2.0 vs >=2.6). All four do run side by side in practice, because
+# neither library touches the incompatible part — but `pip check` will report
+# the conflict, and pip may resolve it by downgrading something you wanted.
+# If you genuinely need more than one engine, use a virtualenv per engine.
