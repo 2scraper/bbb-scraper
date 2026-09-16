@@ -1530,6 +1530,63 @@ def check_no_test_mutates_the_working_tree():
           not changed, "%s" % changed)
 
 
+def check_captcha_capability_claims_match_the_code():
+    """§19: the most expensive bug this family can ship is a SENTENCE.
+
+    It fails in both directions and this family has shipped both:
+
+      * saying a captcha CANNOT be solved, when the true statement is that
+        THIS REPO does not implement the task type. 2Captcha solves
+        enterprise reCAPTCHA and Cloudflare Turnstile and has for years, so
+        such a sentence tells a reader not to buy something that works.
+      * saying this repo DOES solve something it builds no task type for --
+        which is what the README said here: it billed the Managed Challenge
+        solve to `--twocaptcha-key`, while the only thing that clears one is
+        `Captcha.setAutoSolve` over `--cdp-endpoint`.
+
+    Neither is visible to any other check: nothing fails, nothing crashes,
+    and the output is correct.
+    """
+    readme = open(os.path.join(HERE, "README.md"), encoding="utf-8").read()
+    solver = open(os.path.join(HERE, "captcha_solver.py"), encoding="utf-8").read()
+    low = readme.lower()
+
+    # Conclusions about the PRODUCT. Phrases about a page carrying no widget
+    # are deliberately absent -- BBB's hard block really is one, and calling
+    # THAT unsolvable is honest.
+    for phrase in ("cannot be solved", "can't be solved", "neither is solvable",
+                   "is not solvable", "solver is inapplicable", "no solver can"):
+        check("README: no %r -- write 'this repo does not implement X'" % phrase,
+              phrase not in low)
+
+    # The positive direction, stated as a PAIRING rather than a keyword
+    # search so it cannot go quiet by accident: if the task type is absent,
+    # the README has to say so in those words.
+    if "TurnstileTaskProxyless" not in solver:
+        check("README says plainly that TurnstileTaskProxyless is not built here",
+              "does not implement `turnstiletaskproxyless`" in low,
+              "the solver builds no Turnstile task, so the README must not let "
+              "a reader believe --twocaptcha-key clears a Managed Challenge")
+        check("...and the Managed Challenge is not billed to --twocaptcha-key",
+              "(`--twocaptcha-key`) - for the managed challenge" not in low
+              and "(`--twocaptcha-key`) \u2014 for the managed challenge" not in low)
+    else:
+        check("a built Turnstile task needs the render interception too",
+              "TURNSTILE_INTERCEPT_JS" in solver)
+
+    # Whatever the README credits with clearing the challenge must be a thing
+    # the engines actually do.
+    if "setautosolve" in low:
+        srcs = ""
+        for name in ("playwright_scraper.py", "selenium_scraper.py",
+                     "puppeteer_scraper.py"):
+            path = os.path.join(HERE, name)
+            if os.path.exists(path):
+                srcs += open(path, encoding="utf-8").read()
+        check("README credits Captcha.setAutoSolve, and an engine calls it",
+              "Captcha.setAutoSolve" in srcs)
+
+
 CHECKS = [v for k, v in sorted(globals().items()) if k.startswith("check_")]
 
 
