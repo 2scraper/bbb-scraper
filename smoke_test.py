@@ -72,11 +72,18 @@ EMPTY_PAYLOAD_JSON = r'''{"page":1,"pageSize":15,"totalPages":0,"totalResults":0
 
 PROFILE_STATE_JSON = r'''{"user":{},"page":{},"businessProfile":{"id":"0_209366","bbbId":"0121","businessId":"134716","isMultiLocation":true,"names":{"primary":"Proclean Maintenance Systems, Inc."},"rating":{"bbbRating":"A+","ratingReasonNotRated":null,"ratingReasons":[]},"accreditationInformation":{"isAccredited":true},"dates":{"accreditationRevoked":null,"accredited":"2018-10-22T00:00:00","bbbFileOpened":"2012-05-29T00:00:00","businessStart":"2010-01-26T00:00:00","businessLocalStart":null,"incorporated":"2010-01-26T00:00:00","newOwnerDate":null},"localBbbData":{"name":"BBB Serving Metropolitan New York"},"location":{"latitude":40.806404,"longitude":-73.928108,"postalAddress":{"addressLine1":"79 Alexander Ave Ste B16","addressLine2":null,"city":"Bronx","stateCode":"NY","zipCode":"10454-4409"},"servingArea":null,"servingAreas":null},"urls":{"profile":"/us/ny/bronx/profile/cleaning-services/proclean-maintenance-systems-inc-0121-134716","primary":"https://www.pc-ms.com","submitReview":"/us/ny/bronx/profile/cleaning-services/proclean-maintenance-systems-inc-0121-134716/leave-a-review","requestQuote":"/new-york-city/quote/request-proclean-maintenance-systems-inc-134716"},"orgDetails":{"isOutOfBusiness":false,"organizationDescription":"Proclean\nMaintenance Systems, Inc. provides janitorial services, floor care, carpet cleaning, window washing, and construction cleanup for both large and commercial clients.","typeOfEntity":{"legalOrgType":1003,"name":"Corporation","canDisplay":true},"yearsInBusiness":16},"reviewsComplaintsSummary":{"suppressReviews":false,"averageOfReviewStarRatings":0,"displayReviewStarRating":true,"reviewsTotal":0,"complaintsTotal":0,"displayAverageOfReviewStarRatings":false,"submitReviewErrorMessage":"Unable to save review. Please try submitting the review again.","totalClosedComplaintsPastThreeYears":0,"totalClosedComplaintsPastTwelveMonths":0},"categories":{"links":[{"title":"Cleaning Services","url":"/us/ny/bronx/category/cleaning-services","entityType":null,"entityId":null,"id":null},{"title":"Commercial Cleaning Services","url":"/us/ny/bronx/category/commercial-cleaning-services","entityType":null,"entityId":null,"id":null}]},"media":{"logo":null},"contactInformation":{"emailAddress":"","phoneNumber":"(212) 618-6387","additionalPhoneNumbers":[],"additionalFaxNumbers":[{"name":null,"value":"(877) 784-2471","labels":[]}],"contacts":[{"isPrincipal":true,"title":"President","name":{"prefix":"REDACTED","first":"REDACTED","middle":null,"last":"REDACTED","suffix":null}}]}}}'''
 
-CHALLENGE_HTML = "<html><head><title>Just a moment...</title></head><body>kies to continue</span></div></noscript></div></div><script>(function(){window._cf_chl_opt = {cFPWv: 'g',cH: 'D_0_uMlpTlCJDowK3ZLIVeJniyMUVaa_9KFQUPd0AcA-1789556207-1.2.1.1-NGA0bT5PiVPrj9KihzBFW4gPPS2gMqfoRyp3GPIQqeeDJc2 … 1?ray=a3bf58b98f99cee6\"></script><script src=\"https://challenges.cloudflare.com/turnstile/v0/g/330e41bb475c/api.js?onload=khCN8&amp;render=explicit\" async=\"\" defer=\"\" crossorigin=\"anonymous\"></script></head>\n  <body>\n    … h?find_country=USA\\u0026find_text=restaurants\\u0026find_loc=New+York%2C+NY\\u0026__cf_chl_tk=M35_sw6MOEfJn5420KpbyV7lFLfDRv8fpRAmUuaQc70-1789556207-1.0.1.1-pCKVU1Wd8nodmdl6Aw7k9mNgfqUWqug_PhXrPvdu.pE\",cvId: '3',cZone: 'ww</body></html>"
+CHALLENGE_HTML = "<html><head><title>Just a moment...</title></head><body>pt and cookies to continue</span></div></noscript></div></div><script>(function(){window._cf_chl_opt = {cFPWv: 'g',cH: 'D_0_uMlpTlCJDowK3ZLIVeJniyMUVaa_9KFQUPd0AcA-1789556207-1.2.1.1-NGA0bT5PiVPrj9KihzBFW4gPPS2gMqfoRyp3GPIQqeeDJc2 … Tk:\"/search?find_country=USA\\u0026find_text=restaurants\\u0026find_loc=New+York%2C+NY\\u0026__cf_chl_tk=M35_sw6MOEfJn5420KpbyV7lFLfDRv8fpRAmUuaQc70-1789556207-1.0.1.1-pCKVU1Wd8nodmdl6Aw7k9mNgfqUWqug_PhXrPvdu.pE\",cvId: '3',cZone: 'ww … isplay: grid;\"><div><div><div></div><input type=\"hidden\" name=\"cf-turnstile-response\" id=\"cf-chl-widget-tmfx1_response\"></div></div></div><div id=\"CJPCL0\" style=\"display: none;\"><div>Verification successful. Waiting for www.bbb.or … -platform/h/g/orchestrate/chl_page/v1?ray=a3bf58b98f99cee6\"></script><script src=\"https://challenges.cloudflare.com/turnstile/v0/g/330e41bb475c/api.js?onload=khCN8&amp;render=explicit\" async=\"\" defer=\"\" crossorigin=\"anonymous\"></s … chl_page/v1?ray=a3bf58b98f99cee6\"></script><script src=\"https://challenges.cloudflare.com/turnstile/v0/g/330e41bb475c/api.js?onload=khCN8&amp;render=explicit\" async=\"\" defer=\"\" crossorigin=\"anonymous\"></script></head>\n  <body>\n   </body></html>"
 
 HARD_BLOCK_HTML = "<html><head><title>You have been blocked | Better Business Bureau®</title></head><body>ta name=\"viewport\" content=\"width=device-width, initial-scale=1\" />\n\n    <title>You have been blocked | Better Business Bureau®</title>\n\n    <style id=\"custom-props\">\n      :root {\n        --bds-color-black: #2d2926;\n    … 3',t:'MTc4OTU1NjMyMw=='};var a=document.createElement('script');a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);\";b.getElementsByTagName('head')[0].appendCh</body></html>"
 
 SERVED_404_HTML = "<html><head><title>Page not found | Better Business Bureau&#174;</title></head><body>n>\n    <div id=\"iabbb-footer-placeholder\"></div>\n    <script async src=\"https://assets.bbb.org/bbb-web/universal/dist/hf.min.js\"></script>\n  <script>(function(){function c(){var b=a.contentDocument||(a.contentWindow&&a.c … t\"\n            height=\"133\"\n            loading=\"lazy\"\n            src=\"https://m.bbb.org/terminuscontent/dist/img/404-icon__254w.png?tx=w_109\"\n            width=\"109\"\n          />\n        </div>\n        <img\n          a … a',t:'MTc4OTU1NzQwMg=='};var a=document.createElement('script');a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);\";b.getElementsByTagName('head')[0].appendCh</body></html>"
+
+
+# A page BBB SERVED, fetched THROUGH the 2Captcha Scraping Browser.
+# Trimmed around the things that made it dangerous: the auto-solve
+# extension's injected hunters, its `cf-turnstile-response` input, BBB's
+# own reCAPTCHA Enterprise loader, and a real BBB asset reference.
+SERVED_VIA_SCRAPING_BROWSER_HTML = "<html><head><title>Search results for Restaurants near New York, NY | Better Business Bureau®</title></head><body>oogletagmanager.com/gtag/js?id=G-QWV3Q1HBDG&amp;cx=c&amp;gtm=4e69e1\"></script><script src=\"chrome-extension://kjmkgkdkpedkejedfhmfcenooemhbpbo/content/captcha/captchafox/interceptor.js\"></script><script src=\"chrome-exten …  src=\"chrome-extension://kjmkgkdkpedkejedfhmfcenooemhbpbo/content/captcha/turnstile/hunter.js\" data-ts-input=\"cf-turnstile-response\"></script><script src=\"chrome-extension://kjmkgkdkpedkejedfhmfcenooemhbpbo/content/captc … aptcha(){if(loaded){return;}\nloaded=true;var s=document.createElement('script');s.src=\"https://www.google.com/recaptcha/enterprise.js?render=6Lfm-HorAAAAANvcLwOHwVYwoAkSuRb_sWokbfq3\";s.async=true;s.onload=function(){remo … r Restaurants near New York, NY | Search | Better Business Bureau</title><link rel=\"preconnect\" href=\"https://assets.bbb.org\"><link rel=\"preconnect\" href=\"https://www.googletagmanager.com\"><link rel=\"preconnect\" href=\"ht</body></html>"
 
 
 # ---------------------------------------------------------------------------
@@ -531,25 +538,61 @@ def check_page_states_on_real_captures():
 def check_markers_do_not_match_a_page_bbb_serves():
     """CLAUDE.md §18: a marker that matches every page is WORSE than none.
 
-    `challenge-platform` and `cdn-cgi` appear on BBB's OWN served pages —
-    the site sits behind Cloudflare — so neither may ever be a marker.
-    Counted on its 404: 1 each, against 1 on the hard block. This check is
-    what stops either being added back.
+    This check was once passing for the WRONG REASON, and that is why it now
+    runs against two different kinds of served page.
+
+    It originally used BBB's 404 only — fetched through plain curl — which
+    carries `challenge-platform` and `cdn-cgi` (so those two are correctly
+    excluded) but nothing else. Meanwhile `cf-turnstile` was in the marker
+    set and fired on **five of five** pages fetched through the 2Captcha
+    Scraping Browser, because that product's auto-solve extension injects its
+    own hunters into every page it loads. A good page therefore named a
+    vendor, and only the signal ORDERING in detect_page_state (payload first)
+    kept it from being reported as a challenge.
+
+    So the fixture that matters is a page BBB served THROUGH the Scraping
+    Browser, extension injections and all.
     """
     import product_parser as P
-    for marker in P.BOT_CHALLENGE_MARKERS:
-        check("marker %r does not appear on a page BBB served" % marker,
-              marker not in SERVED_404_HTML)
-    for banned in ("challenge-platform", "cdn-cgi"):
+    for label, page in (("404 (plain curl)", SERVED_404_HTML),
+                        ("listing (via Scraping Browser)",
+                         SERVED_VIA_SCRAPING_BROWSER_HTML)):
+        for marker in P.BOT_CHALLENGE_MARKERS:
+            check("marker %r does not appear on a served %s" % (marker, label),
+                  marker not in page)
+        check("no vendor is named on a served %s" % label,
+              P.detect_bot_challenge(page) is None,
+              "got %r" % P.detect_bot_challenge(page))
+
+    # The fixture has to actually CARRY the dangerous content, or this check
+    # proves nothing. Pinned so a future re-capture cannot quietly drop it.
+    check("the Scraping Browser fixture carries the auto-solve extension",
+          "kjmkgkdkpedkejedfhmfcenooemhbpbo" in SERVED_VIA_SCRAPING_BROWSER_HTML)
+    check("...including its cf-turnstile-response input",
+          "cf-turnstile" in SERVED_VIA_SCRAPING_BROWSER_HTML)
+
+    for banned in ("challenge-platform", "cdn-cgi", "cf-turnstile"):
         check("%r is NOT in the marker set" % banned,
               not any(banned in m for m in P.BOT_CHALLENGE_MARKERS))
-        check("...and it really does appear on a served page" ,
-              banned in SERVED_404_HTML, "%r missing from the fixture" % banned)
+    # ...and each one really does appear on a page BBB served, or excluding it
+    # would be a precaution against nothing.
+    for banned, page in (("challenge-platform", SERVED_404_HTML),
+                         ("cdn-cgi", SERVED_404_HTML),
+                         ("cf-turnstile", SERVED_VIA_SCRAPING_BROWSER_HTML)):
+        check("...and %r really does appear on a served page" % banned,
+              banned in page)
+
+    # Every marker must fire on at least one real refusal, or it is dead
+    # weight. `/turnstile/v0/api.js` was in this list and matched nothing at
+    # all across every capture (§17).
+    for marker in P.BOT_CHALLENGE_MARKERS:
+        check("marker %r fires on a real challenge" % marker,
+              marker in CHALLENGE_HTML,
+              "matches nothing — dead weight")
+
     equal("the challenge fixture names its vendor",
           P.detect_bot_challenge(CHALLENGE_HTML), "cloudflare (cf_chl_opt)")
-    equal("a served page names no vendor",
-          P.detect_bot_challenge(SERVED_404_HTML), None)
-    equal("the HARD block names no vendor either — it carries no widget",
+    equal("the HARD block names no vendor — it carries no widget",
           P.detect_bot_challenge(HARD_BLOCK_HTML), None)
 
 

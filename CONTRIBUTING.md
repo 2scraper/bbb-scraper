@@ -152,13 +152,35 @@ that breaks one will fail rather than silently regress:
   blocked" page carrying no widget at all. Both are HTTP 403 and both wear
   BBB's own branding in the `<title>`, so they are told apart structurally.
   `page_flow.STATE_POLICY` spends on the first and NEVER on the second.
-- **A marker that matches every page is worse than no marker.**
-  `challenge-platform` and `cdn-cgi` appear on pages BBB serves normally —
-  counted on its own 404 — so neither is in `BOT_CHALLENGE_MARKERS`, and
-  `smoke_test.py` asserts both that they are absent from the list and that
-  they really are present on a served page. What discriminates is the
-  challenge's own vocabulary and, positively, whether the page was built out
-  of `assets.bbb.org` / `m.bbb.org`.
+- **A marker that matches every page is worse than no marker**, and this
+  list has already been wrong once. `challenge-platform` and `cdn-cgi`
+  appear on pages BBB serves normally — counted on its own 404 — so neither
+  is in `BOT_CHALLENGE_MARKERS`. Neither is **`cf-turnstile`**, which is the
+  obvious marker for a Turnstile and is measured useless here for a reason
+  that has nothing to do with BBB: 2Captcha's own Scraping Browser
+  auto-solve extension injects its hunters into every page it loads, so
+  `cf-turnstile` fired on **five of five** pages fetched that way and on only
+  one of the two real challenges. And `/turnstile/v0/api.js` fired on nothing
+  at all, served or refused — dead weight, removed.
+
+  What discriminates is the challenge's own vocabulary (`cf_chl_opt`,
+  `__cf_chl`, `cf-chl-`, `challenges.cloudflare.com` — 0 on every served
+  page) and, positively, whether the page was built out of `assets.bbb.org` /
+  `m.bbb.org`.
+
+  `smoke_test.py` pins all of it in both directions: no marker may appear on
+  a served page (checked against a listing fetched THROUGH the Scraping
+  Browser, which is the fixture that exposed the mistake), every marker must
+  fire on a real challenge, and the three excluded strings must really be
+  present on a served page — or excluding them would be a precaution against
+  nothing.
+
+- **BBB has its own captcha, and it is not the one above.** Every served page
+  carries a reCAPTCHA **Enterprise** configuration
+  (`NEXT_PUBLIC_GOOGLE_RECAPTCHA_SITE_KEY`, `recaptcha/enterprise.js?render=…`)
+  for its review and complaint forms. `render=<sitekey>` means v3/Enterprise,
+  not a v2 checkbox — worth knowing before anyone pays for the wrong task
+  type. This scraper never touches those forms.
 
 Plus the family's own invariants, which are not negotiable:
 
