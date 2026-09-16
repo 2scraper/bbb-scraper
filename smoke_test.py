@@ -1585,6 +1585,40 @@ def check_captcha_capability_claims_match_the_code():
                 srcs += open(path, encoding="utf-8").read()
         check("README credits Captcha.setAutoSolve, and an engine calls it",
               "Captcha.setAutoSolve" in srcs)
+def check_no_statement_is_unreachable():
+    """A statement sitting after a return/raise/break/continue in the SAME
+    block, which therefore can never run.
+
+    Narrow on purpose: it makes no claim about reachability in general, only
+    about a block whose control flow has already left. Measured across the
+    eighteen repos of this family on 2026-09-16 it reported six problems and
+    zero false positives.
+
+    `check_undefined_names_in_every_module` cannot see this class at all, by
+    design -- it pools every binding in the file rather than tracking scopes,
+    so a name used inside dead code passes as long as anything else in the
+    module binds it. What was hiding in that blind spot here, and in five
+    sibling repos, byte for byte: a function whose `def` line had been lost,
+    leaving its docstring and body absorbed into the end of the function
+    above it. Present since this repo's first commit, invisible to import,
+    `--help`, `compileall`, and every green run of this suite.
+    """
+    for filename in sorted(f for f in os.listdir(HERE) if f.endswith(".py")):
+        tree = ast.parse(open(os.path.join(HERE, filename),
+                              encoding="utf-8").read())
+        dead = []
+        for node in ast.walk(tree):
+            for field in ("body", "orelse", "finalbody"):
+                block = getattr(node, field, None)
+                if not isinstance(block, list):
+                    continue
+                for i, stmt in enumerate(block[:-1]):
+                    if isinstance(stmt, (ast.Return, ast.Raise,
+                                         ast.Continue, ast.Break)):
+                        dead.append(block[i + 1].lineno)
+                        break
+        check("%s: no statement the control flow can never reach" % filename,
+              not dead, "first at line %d" % min(dead) if dead else "")
 
 
 CHECKS = [v for k, v in sorted(globals().items()) if k.startswith("check_")]

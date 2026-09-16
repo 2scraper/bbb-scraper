@@ -37,6 +37,24 @@ When it does, the release notes lead with it.
   full through one). On that path the auto-solve clears the challenge before
   a local solver would get a turn.
 
+- **Fifteen lines of unreachable code removed from `playwright_scraper.py`.**
+  A function's `def` line had been lost before this repo's first commit,
+  leaving its docstring and its `try: return page.content()` body indented
+  into the end of `_mask_credentials`, where the control flow can never
+  arrive. Nothing called it — `_content_when_settled` below it does the job.
+  The same fifteen lines, byte for byte, were in six repos of this family.
+- **Five dead helpers removed from the engines**, two of them calling a
+  `page_flow` API that does not exist in this repo: `page_flow.comparable`,
+  `page_flow.next_page_selector` and `page_flow.next_page_candidates` are
+  Tokopedia's, and came here with the code — one docstring still described
+  Tokopedia's `keyword=kopi&search_id=` tracking tail. Nothing called any of
+  the five. This repo paginates on `page_url()` and the endpoint's own
+  `totalPages`, which is the arithmetic the site does for us, so a
+  selector-walking next-page helper had no role here even had it worked.
+- `parse_qsl` is no longer imported by the two engines that only used it in
+  the helper above. Six other unused imports predate this work and are left
+  alone deliberately, so this diff stays attributable.
+
 ### Added
 
 - **`check_captcha_capability_claims_match_the_code`** — a guard in both
@@ -46,6 +64,14 @@ When it does, the release notes lead with it.
   — task type absent ⇒ the README must carry the disclaimer in those words —
   so it cannot go quiet the way a keyword search can. Verified by control:
   flipping the disclaimer turns the suite red.
+
+- **A check for a statement the control flow can never reach**, and one that
+  the existing undefined-name walk cannot see by design: that walk pools
+  every binding in a file rather than tracking scopes, so a name used inside
+  dead code passes as long as anything else in the module binds it. The new
+  check is narrow — a statement after a `return`/`raise`/`break`/`continue`
+  in the SAME block — and across the eighteen repos of this family it found
+  six real problems and zero false positives. Verified by control.
 
 ## [1.0.1] — 2026-09-16
 

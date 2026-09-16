@@ -82,7 +82,7 @@ import threading
 import time
 from dataclasses import dataclass, field
 from typing import List, Optional
-from urllib.parse import urlparse, urljoin, parse_qsl
+from urllib.parse import urlparse, urljoin
 
 from playwright.sync_api import (sync_playwright, Error as PWError,
                                  TimeoutError as PWTimeout)
@@ -338,20 +338,6 @@ def _plan_page_urls(args, page_one_url: str,
     return [page_url(page_one_url, n) for n in range(2, wanted + 1)]
 
 
-def _same_url(a: str, b: str) -> bool:
-    """Whether two URLs address the same page.
-
-    Compared on the parsed parts rather than the raw string: BBB re-encodes
-    `find_loc` between what is requested (`New+York%2C+NY`) and what the
-    browser reports (`New York, NY`), so two views of one page never match
-    as strings even when nothing moved.
-    """
-    pa, pb = urlparse(a or ""), urlparse(b or "")
-    return (pa.netloc.lower() == pb.netloc.lower()
-            and pa.path.rstrip("/") == pb.path.rstrip("/")
-            and sorted(parse_qsl(pa.query)) == sorted(parse_qsl(pb.query)))
-
-
 # Chromium's own names for "the proxy is the problem, not the site". Matched
 # on the error text because Playwright surfaces them as a generic Error.
 _PROXY_ERROR_MARKERS = (
@@ -556,21 +542,6 @@ def _mask_credentials(text: str) -> str:
     and is not the secret.
     """
     return _CREDENTIALS_IN_URL_RE.sub(r"\1***:***@", text or "")
-
-
-    """The page's HTML, or None when it cannot be read right now.
-
-    Playwright RAISES rather than returning empty while a navigation is in
-    flight ("Unable to retrieve content because the page is navigating"), and
-    a DataDome interstitial resolves by navigating — so the one moment this
-    is called is the one moment it can fail. Returning None keeps
-    `page_flow.settle_datadome` waiting instead of crashing the run, which is
-    what the first live run of this engine did.
-    """
-    try:
-        return page.content()
-    except (PWError, PWTimeout):
-        return None
 
 
 def _content_when_settled(page, attempts: int = 4, pause_ms: int = 700):
