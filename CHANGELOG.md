@@ -8,6 +8,81 @@ CLI toolkit can. A PATCH release means fixes — it does not promise that every
 flag and default is frozen, so a behaviour-changing default can appear in one.
 When it does, the release notes lead with it.
 
+## [1.0.2] — 2026-09-16
+
+> **Correction to v1.0.1.** Its README billed the Managed Challenge solve to
+> the wrong product. It read "**Captcha solving** (`--twocaptcha-key`) — for
+> the Managed Challenge only" with a table marking that challenge
+> **solvable**. The challenge is indeed solvable, but not by anything a
+> `--twocaptcha-key` buys here: `captcha_solver.py` builds `RecaptchaV2Task`,
+> `RecaptchaV2TaskProxyless` and `RecaptchaV3TaskProxyless` and no Turnstile
+> task at all. What actually clears it is `Captcha.setAutoSolve` over
+> `--cdp-endpoint`, which is the Scraping Browser API — a separately billed
+> product. A reader following the old README would have set a key, met the
+> challenge anyway, and had no way to tell why.
+
+### Fixed
+
+- **The README now names the product that clears each refusal**, and says in
+  those words that **this repo does not implement `TurnstileTaskProxyless`**
+  — nor the init script that captures `sitekey`, `action`, `cData` and
+  `chlPageData` from Cloudflare's single call to `turnstile.render()`, which
+  is the only way to obtain them because they appear nowhere in the served
+  HTML. That is a gap in this repo, not in 2Captcha, which solves Turnstile;
+  `foodpanda-scraper` in this family implements the interception.
+- **Why it is not implemented is now stated with the measurement behind it**:
+  the listing path is not behind Cloudflare at all, and the profile path —
+  which is — already needs a Scraping Browser session to be reachable
+  (measured 2026-09-16: the same profile URL returned 403 direct and 200 in
+  full through one). On that path the auto-solve clears the challenge before
+  a local solver would get a turn.
+
+- **Fifteen lines of unreachable code removed from `playwright_scraper.py`.**
+  A function's `def` line had been lost before this repo's first commit,
+  leaving its docstring and its `try: return page.content()` body indented
+  into the end of `_mask_credentials`, where the control flow can never
+  arrive. Nothing called it — `_content_when_settled` below it does the job.
+  The same fifteen lines, byte for byte, were in six repos of this family.
+- **Five dead helpers removed from the engines**, two of them calling a
+  `page_flow` API that does not exist in this repo: `page_flow.comparable`,
+  `page_flow.next_page_selector` and `page_flow.next_page_candidates` are
+  Tokopedia's, and came here with the code — one docstring still described
+  Tokopedia's `keyword=kopi&search_id=` tracking tail. Nothing called any of
+  the five. This repo paginates on `page_url()` and the endpoint's own
+  `totalPages`, which is the arithmetic the site does for us, so a
+  selector-walking next-page helper had no role here even had it worked.
+- `parse_qsl` is no longer imported by the two engines that only used it in
+  the helper above. Six other unused imports predate this work and are left
+  alone deliberately, so this diff stays attributable.
+
+### Added
+
+- **The signature-binding check no longer swallows a name that is absent.**
+  It resolved the callee with `getattr(owner, attr, None)` and skipped
+  anything that came back not-callable — so a call into a shared module
+  function that **does not exist** was treated as "nothing to bind" rather
+  than as the loudest failure available. That is how three calls into a
+  `page_flow` API this repo does not have sat in two engines under a green
+  run of that very check. Absent is now a failure, naming the caller and its
+  line. Verified by control: adding a call to `page_flow.does_not_exist()`
+  turns the suite red.
+
+- **`check_captcha_capability_claims_match_the_code`** — a guard in both
+  directions. It fails the build on a documented claim that a captcha cannot
+  be solved, and on a README that credits a Turnstile solve to this repo
+  while no Turnstile task type is built. The second is asserted as a PAIRING
+  — task type absent ⇒ the README must carry the disclaimer in those words —
+  so it cannot go quiet the way a keyword search can. Verified by control:
+  flipping the disclaimer turns the suite red.
+
+- **A check for a statement the control flow can never reach**, and one that
+  the existing undefined-name walk cannot see by design: that walk pools
+  every binding in a file rather than tracking scopes, so a name used inside
+  dead code passes as long as anything else in the module binds it. The new
+  check is narrow — a statement after a `return`/`raise`/`break`/`continue`
+  in the SAME block — and across the eighteen repos of this family it found
+  six real problems and zero false positives. Verified by control.
+
 ## [1.0.1] — 2026-09-16
 
 > **A marker was wrong, and it was one that could have cost money.**

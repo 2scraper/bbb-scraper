@@ -883,7 +883,23 @@ def check_shared_calls_bind_against_the_real_signature():
                 owner, attr = direct[func.id]
             if owner is None:
                 continue
-            callee = getattr(owner, attr, None)
+            # A name that is NOT THERE is the loudest possible failure and
+            # this check used to swallow it: `getattr(..., None)` returned
+            # None, `not callable(None)` was true, and the call was skipped.
+            # Three calls into a page_flow API that does not exist in this
+            # repo -- comparable(), next_page_selector(),
+            # next_page_candidates(), all of them Tokopedia's, all arriving
+            # with copied code -- sat in two engines under a green run of
+            # this very function. Absent is not "nothing to bind".
+            if not hasattr(owner, attr):
+                check("%s.%s exists (called from %s:%d)"
+                      % (getattr(owner, "__name__", owner), attr,
+                         module + ".py", node.lineno),
+                      False,
+                      "the engine calls a name the shared module does not "
+                      "define; a live run reaches this as AttributeError")
+                continue
+            callee = getattr(owner, attr)
             if not callable(callee) or inspect.isclass(callee):
                 continue
             try:
@@ -1528,6 +1544,97 @@ def check_no_test_mutates_the_working_tree():
     changed = sorted(set(after) - set(_TREE_BEFORE))
     check("the suite itself changed nothing in the working tree",
           not changed, "%s" % changed)
+
+
+def check_captcha_capability_claims_match_the_code():
+    """§19: the most expensive bug this family can ship is a SENTENCE.
+
+    It fails in both directions and this family has shipped both:
+
+      * saying a captcha CANNOT be solved, when the true statement is that
+        THIS REPO does not implement the task type. 2Captcha solves
+        enterprise reCAPTCHA and Cloudflare Turnstile and has for years, so
+        such a sentence tells a reader not to buy something that works.
+      * saying this repo DOES solve something it builds no task type for --
+        which is what the README said here: it billed the Managed Challenge
+        solve to `--twocaptcha-key`, while the only thing that clears one is
+        `Captcha.setAutoSolve` over `--cdp-endpoint`.
+
+    Neither is visible to any other check: nothing fails, nothing crashes,
+    and the output is correct.
+    """
+    readme = open(os.path.join(HERE, "README.md"), encoding="utf-8").read()
+    solver = open(os.path.join(HERE, "captcha_solver.py"), encoding="utf-8").read()
+    low = readme.lower()
+
+    # Conclusions about the PRODUCT. Phrases about a page carrying no widget
+    # are deliberately absent -- BBB's hard block really is one, and calling
+    # THAT unsolvable is honest.
+    for phrase in ("cannot be solved", "can't be solved", "neither is solvable",
+                   "is not solvable", "solver is inapplicable", "no solver can"):
+        check("README: no %r -- write 'this repo does not implement X'" % phrase,
+              phrase not in low)
+
+    # The positive direction, stated as a PAIRING rather than a keyword
+    # search so it cannot go quiet by accident: if the task type is absent,
+    # the README has to say so in those words.
+    if "TurnstileTaskProxyless" not in solver:
+        check("README says plainly that TurnstileTaskProxyless is not built here",
+              "does not implement `turnstiletaskproxyless`" in low,
+              "the solver builds no Turnstile task, so the README must not let "
+              "a reader believe --twocaptcha-key clears a Managed Challenge")
+        check("...and the Managed Challenge is not billed to --twocaptcha-key",
+              "(`--twocaptcha-key`) - for the managed challenge" not in low
+              and "(`--twocaptcha-key`) \u2014 for the managed challenge" not in low)
+    else:
+        check("a built Turnstile task needs the render interception too",
+              "TURNSTILE_INTERCEPT_JS" in solver)
+
+    # Whatever the README credits with clearing the challenge must be a thing
+    # the engines actually do.
+    if "setautosolve" in low:
+        srcs = ""
+        for name in ("playwright_scraper.py", "selenium_scraper.py",
+                     "puppeteer_scraper.py"):
+            path = os.path.join(HERE, name)
+            if os.path.exists(path):
+                srcs += open(path, encoding="utf-8").read()
+        check("README credits Captcha.setAutoSolve, and an engine calls it",
+              "Captcha.setAutoSolve" in srcs)
+def check_no_statement_is_unreachable():
+    """A statement sitting after a return/raise/break/continue in the SAME
+    block, which therefore can never run.
+
+    Narrow on purpose: it makes no claim about reachability in general, only
+    about a block whose control flow has already left. Measured across the
+    eighteen repos of this family on 2026-09-16 it reported six problems and
+    zero false positives.
+
+    `check_undefined_names_in_every_module` cannot see this class at all, by
+    design -- it pools every binding in the file rather than tracking scopes,
+    so a name used inside dead code passes as long as anything else in the
+    module binds it. What was hiding in that blind spot here, and in five
+    sibling repos, byte for byte: a function whose `def` line had been lost,
+    leaving its docstring and body absorbed into the end of the function
+    above it. Present since this repo's first commit, invisible to import,
+    `--help`, `compileall`, and every green run of this suite.
+    """
+    for filename in sorted(f for f in os.listdir(HERE) if f.endswith(".py")):
+        tree = ast.parse(open(os.path.join(HERE, filename),
+                              encoding="utf-8").read())
+        dead = []
+        for node in ast.walk(tree):
+            for field in ("body", "orelse", "finalbody"):
+                block = getattr(node, field, None)
+                if not isinstance(block, list):
+                    continue
+                for i, stmt in enumerate(block[:-1]):
+                    if isinstance(stmt, (ast.Return, ast.Raise,
+                                         ast.Continue, ast.Break)):
+                        dead.append(block[i + 1].lineno)
+                        break
+        check("%s: no statement the control flow can never reach" % filename,
+              not dead, "first at line %d" % min(dead) if dead else "")
 
 
 CHECKS = [v for k, v in sorted(globals().items()) if k.startswith("check_")]

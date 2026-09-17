@@ -495,42 +495,6 @@ def _snapshot(session, url: str):
     return _driver(session)["content"]()
 
 
-def _same_url(a: str, b: str) -> bool:
-    """Whether two URLs address the same page.
-
-    Delegates to page_flow rather than reimplementing the comparison, so all
-    three engines cannot drift on it. On this site the comparison has to
-    strip a long tracking tail: a listing anchor arrives with
-    `?extParam=…keyword=kopi&search_id=…&src=search` and a detail page's own
-    canonical arrives with a UTM triple, so two views of one page never
-    match unless both sides are cleaned. An engine with its own copy of
-    this in a sibling repo got the equivalent wrong and silently fell back
-    to sequential fetching.
-    """
-    return page_flow.comparable(a) == page_flow.comparable(b)
-
-
-def _next_page_candidates(session, page_num: int) -> List[str]:
-    """The site's own next-page link, resolved, or None.
-
-    Returns EVERY candidate, filtered by page_flow to the ones that really do
-    paginate this listing: a shop front advertises its REVIEWS pagination
-    alongside its items, and following that one returns rows from the wrong
-    listing while reporting success.
-
-    Reads the DOM's `.href` property rather than the raw attribute, which the
-    browser has already resolved — the opposite of Playwright's
-    get_attribute("href"). Kept explicit because the two engines differ here
-    and a hand-rolled join got it wrong once.
-    """
-    bridge, page = session.bridge, session.page
-    hrefs = bridge.run(page.evaluate(
-        "(selector) => Array.from(document.querySelectorAll(selector))"
-        ".map(a => a.href || a.getAttribute('href')).filter(Boolean)",
-        page_flow.next_page_selector(page_num)))
-    return page_flow.next_page_candidates(page.url, hrefs or [])
-
-
 def handle_captcha_if_present(session, args) -> bool:
     """Detect and solve a challenge. True if something was solved.
 

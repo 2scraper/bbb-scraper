@@ -194,17 +194,36 @@ One key, four separately-billed products
   run none. This is what every live profile measurement in this README was
   taken through. One live connection per `pid`, which is why `--concurrency`
   is refused with it.
-* **Captcha solving** (`--twocaptcha-key`) — for the Managed Challenge only.
-  BBB refuses in two shapes and **only one of them is solvable**:
+* **Captcha solving** — and it matters *which* product clears BBB's gate,
+  because the two are billed separately. BBB refuses in two shapes:
 
-  | | title | solvable |
+  | | title | what clears it |
   |---|---|---|
-  | Managed Challenge | `Just a moment...` | yes — a real Turnstile widget |
-  | Hard block | `You have been blocked \| Better Business Bureau®` | **no** — no widget, no sitekey |
+  | Managed Challenge | `Just a moment...` | a real Turnstile widget — cleared by `Captcha.setAutoSolve` over `--cdp-endpoint` |
+  | Hard block | `You have been blocked \| Better Business Bureau®` | nothing: no widget, no sitekey. A different exit is the only answer |
 
   Both are HTTP 403 and both wear BBB's own branding, so the scrapers tell
   them apart structurally. `--solve-captcha when-blocked` is the default and
   the `blocked` state never spends.
+
+  **`--twocaptcha-key` alone does not clear the Managed Challenge here.** The
+  local solver in `captcha_solver.py` builds `RecaptchaV2Task`,
+  `RecaptchaV2TaskProxyless` and `RecaptchaV3TaskProxyless`, and **this repo
+  does not implement `TurnstileTaskProxyless`** — nor the init script that
+  captures `sitekey`, `action`, `cData` and `chlPageData` from Cloudflare's
+  one call to `turnstile.render()`, which is the only way to obtain them
+  (they appear nowhere in the served HTML). That is a gap in this repo and
+  not in the product: 2Captcha solves Turnstile, and `foodpanda-scraper` in
+  this family does exactly this. It is not implemented here because of where
+  the gate actually is: the listing path — which is what this scraper is
+  mostly for — is not behind Cloudflare at all, and the profile path, which
+  is, already needs a Scraping Browser session to be reachable (measured
+  2026-09-16: the same profile URL returned 403 direct and 200 in full
+  through one). On that path `Captcha.setAutoSolve` clears the challenge
+  inside the browser before a local solver would get a turn. The reCAPTCHA machinery is kept as a DETECTOR:
+  which challenge a visitor meets depends on the exit and on what the address
+  has been doing, and a narrow detector is how a challenge gets reported as
+  an empty page months later.
 * **Fingerprints** (`--fingerprint`) — a consistent device identity for a
   local browser. Ignored with `--cdp-endpoint`, which brings its own.
 

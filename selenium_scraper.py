@@ -59,7 +59,7 @@ import sys
 import time
 from dataclasses import dataclass, field
 from typing import List, Optional
-from urllib.parse import urlparse, urlsplit, parse_qsl
+from urllib.parse import urlparse, urlsplit
 
 from selenium import webdriver
 from selenium.common.exceptions import (TimeoutException, WebDriverException,
@@ -377,21 +377,6 @@ def _parse_for_mode(html: str, url: str, args, page_num: int = 1):
     return listing.rows, listing
 
 
-def _same_url(a: str, b: str) -> bool:
-    """Whether two URLs address the same page.
-
-    Compared on the parsed parts rather than the raw string, and spelled
-    identically to playwright_scraper._same_url: BBB re-encodes `find_loc`
-    between what is requested (`New+York%2C+NY`) and what the browser reports
-    (`New York, NY`), so two views of one page never match as strings even
-    when nothing moved.
-    """
-    pa, pb = urlparse(a or ""), urlparse(b or "")
-    return (pa.netloc.lower() == pb.netloc.lower()
-            and pa.path.rstrip("/") == pb.path.rstrip("/")
-            and sorted(parse_qsl(pa.query)) == sorted(parse_qsl(pb.query)))
-
-
 def _is_endpoint(url: str) -> bool:
     """Whether this address is BBB's JSON endpoint rather than a page."""
     return urlparse(url or "").path == API_PATH
@@ -417,33 +402,6 @@ def _snapshot(session, url: str):
             logger.warning("Could not read the endpoint response: %s", e)
             return None
     return _driver(session)["content"]()
-
-
-def _next_page_candidates(session, page_num: int) -> List[str]:
-    """The site's own next-page link, resolved by the browser, or None.
-
-    Returns EVERY candidate, filtered by page_flow to the ones that really do
-    paginate this listing: a shop front advertises its REVIEWS pagination
-    alongside its items, and following that one returns rows from the wrong
-    listing while reporting success.
-
-    Reads the DOM's `.href` property, which is already absolute — the
-    opposite of Playwright's get_attribute("href"), which returns the raw
-    attribute. Kept explicit because the engines differ here.
-
-    Note the JS is a function BODY with an explicit `return`, not the arrow
-    expression the other two engines pass. That difference is exactly why no
-    JavaScript crosses the page_flow boundary.
-    """
-    try:
-        hrefs = session.driver.execute_script(
-            "return Array.from(document.querySelectorAll(arguments[0]))"
-            ".map(a => a.href || a.getAttribute('href')).filter(Boolean);",
-            page_flow.next_page_selector(page_num))
-    except WebDriverException:
-        return []
-    return page_flow.next_page_candidates(session.driver.current_url,
-                                          hrefs or [])
 
 
 def handle_captcha_if_present(session, args) -> bool:
