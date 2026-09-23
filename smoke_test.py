@@ -1674,6 +1674,49 @@ def check_x_debug_header_is_redacted():
 
 
 
+def check_scraper_api_sends_waitfor_as_an_object_and_reads_http_code():
+    """Measured 2026-09-23 against the live Scraper API: a JSON-encoded
+    STRING waitFor is answered HTTP 422 and still billed, an object is
+    answered 200; and the target's status is `http_code`, while `status` is
+    the API's own verdict ("success"). Driven through the real fetch_html
+    with requests.post stubbed -- no network."""
+    try:
+        import scraper_api_client as sac
+    except ImportError as e:
+        skip("scraper_api_client", "not importable (%s)" % e)
+        return
+    import types
+    sent = {}
+
+    class _Resp:
+        status_code = 200
+        headers = {}
+        text = ""
+
+        def json(self):
+            return {"status": "success", "http_code": 403, "headers": {},
+                    "body": "<html></html>"}
+
+    def _post(url, **kw):
+        sent.update(kw.get("json") or {})
+        return _Resp()
+
+    args = types.SimpleNamespace(
+        url='https://www.bbb.org/us/ny/bronx/profile/cleaning-services/proclean-maintenance-systems-inc-0121-134716', key="k" * 8,
+        timeout=60, cdp_url=None, wait_text='BBB', wait_element=None,
+        wait_state=None)
+    real_post = sac.requests.post
+    sac.requests.post = _post
+    try:
+        _html, status = sac.fetch_html(args)
+    finally:
+        sac.requests.post = real_post
+    check("Scraper API: --wait-text sends waitFor as an OBJECT, not a JSON string (422 + billed, 2026-09-23)",
+          sent.get("waitFor") == {"text": 'BBB'}, repr(sent.get("waitFor")))
+    check("Scraper API: the target status handed onward is http_code (403), not the API's 'success'",
+          status == 403 and isinstance(status, int), repr(status))
+
+
 CHECKS = [v for k, v in sorted(globals().items()) if k.startswith("check_")]
 
 
