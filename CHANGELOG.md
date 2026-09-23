@@ -8,6 +8,33 @@ CLI toolkit can. A PATCH release means fixes — it does not promise that every
 flag and default is frozen, so a behaviour-changing default can appear in one.
 When it does, the release notes lead with it.
 
+## [Unreleased]
+
+### Fixed
+
+- **Issue templates described Etsy, not BBB.** The bug-report hints talked
+  about DataDome, `t=bv`, `shop_rating` and exit-IP storefronts, the example
+  command scraped an Etsy search, and the site-change template pointed at a
+  JSON-LD parser this repo does not have. Rewritten from this repo's README:
+  the Cloudflare-gated profile mode, the 15-pages-of-15 cap, unrated
+  businesses written as null, and the `__PRELOADED_STATE__` anchors. The
+  bug-report and question templates no longer link a `TROUBLESHOOTING.md`
+  this repo never had.
+- **`--retries` help said an empty "hub category" is a correct answer** in
+  all three engines. BBB has no hub categories; the empty case here is a
+  query that matched nothing, and the help now says so. The matching engine
+  comments were corrected the same way.
+- Comments that described another site's pages as this one's: the
+  `akamaihd.net` hub-page incident is now attributed to the sibling
+  tokopedia-scraper where it happened, the pyppeteer engine's single-page
+  note no longer talks about a `--mode shop` this repo does not have, and
+  `captcha_solver.py` no longer points at a "No DataDome solver" section
+  that does not exist.
+- `SECURITY.md` said this project has no releases or tags; it has both.
+- The access badge's alt text now says what its label already did: the
+  listing modes run without an account (profile mode needs a residential
+  exit).
+
 ## [1.0.2] — 2026-09-16
 
 > **Correction to v1.0.1.** Its README billed the Managed Challenge solve to

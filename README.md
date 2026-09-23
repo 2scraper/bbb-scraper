@@ -6,7 +6,7 @@
 ![python](https://img.shields.io/badge/python-3.9%20%7C%203.12-blue)
 [![licence](https://img.shields.io/badge/licence-MIT-green)](LICENSE)
 ![engines](https://img.shields.io/badge/engines-playwright%20%7C%20selenium%20%7C%20pyppeteer-lightgrey)
-![runs without an account](https://img.shields.io/badge/search%20%26%20category-no%20account%20needed-brightgreen)
+![listings run without an account](https://img.shields.io/badge/search%20%26%20category-no%20account%20needed-brightgreen)
 
 Scrapes business listings and business profiles from the **Better Business
 Bureau** ([bbb.org](https://www.bbb.org)) — name, address, phone numbers, BBB
