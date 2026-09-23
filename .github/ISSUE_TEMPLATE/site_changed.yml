@@ -1,5 +1,5 @@
 name: Site changed / selectors broke
-description: Etsy changed something and the parser no longer matches.
+description: BBB changed something and the parser no longer matches.
 labels: ["site-change"]
 body:
   - type: markdown
@@ -7,22 +7,25 @@ body:
       value: |
         This is the most common way a scraper stops working, and it is worth its
         own report because the fix is different from a code bug: something on
-        etsy.com moved.
+        bbb.org moved.
 
-        Useful to know before filing: the parser tries **JSON-LD first**, then a
-        CSS + URL-pattern fallback. Which one broke narrows the fix a lot.
+        Useful to know before filing: the parser does not read the DOM. It
+        reads the state BBB embeds in every page
+        (`window.__PRELOADED_STATE__`, whose `searchResult` is the site's own
+        `/api/search` response). CONTRIBUTING.md lists the four things that
+        can break; saying which one narrows the fix a lot.
 
   - type: dropdown
     id: what_broke
     attributes:
       label: What stopped matching
       options:
-        - Products (0 rows on a page that visibly has products)
-        - A specific field is null or wrong (price, sku, image, URL)
-        - original_price or lowest_price_30d empty out (the tile overlay)
-        - DOM price confirmation dropped below 90% in the run log
+        - Businesses (0 rows on a page that visibly has businesses)
+        - A specific field is null or wrong (rating, address, phone, sku, URL)
+        - The `__PRELOADED_STATE__` payload is missing or renamed
+        - The /api/search endpoint now needs a key or is behind Cloudflare
         - Pagination stops early or repeats a page
-        - The captcha detector finds nothing on a page that has one
+        - A block or challenge is misclassified (exit 3 on a good page, or rows from a challenge)
         - Something else
     validations:
       required: true
@@ -32,7 +35,7 @@ body:
     attributes:
       label: URL
       description: The exact listing URL, and the country your exit IP was in.
-      placeholder: "https://www.etsy.com/search?q=handmade+mug (locale: /de/, exit IP: DE residential, Scraping Browser pid: etsy1)"
+      placeholder: "https://www.bbb.org/search?find_country=USA&find_text=restaurants&find_loc=New%20York%2C%20NY (exit IP: US residential, Scraping Browser pid: bbb1)"
     validations:
       required: true
 
@@ -43,9 +46,9 @@ body:
       description: |
         Whichever of these you can get. A capture beats a description.
 
-        - JSON-LD as the page actually serves it:
-          `python3 -c "import json,sys,re;h=open('dump.html').read();print([m[:400] for m in re.findall(r'<script type=\"application/ld\\+json\">(.*?)</script>',h,re.S)][:2])"`
-        - Or open devtools and paste one `Product` node from the `ItemList`.
+        - The `--dump-html` snapshot of the page, or the relevant part of
+          `window.__PRELOADED_STATE__` from it (one `searchResult` record, or
+          the `businessProfile` object on a profile page).
         - For a field problem: the value you got, and the value on the page.
       render: text
     validations:
