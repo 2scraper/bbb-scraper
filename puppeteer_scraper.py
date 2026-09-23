@@ -700,7 +700,7 @@ def _fetch_one_page(session, args, pool, page_num: int, url: str) -> PageOutcome
 
         if not page_flow.should_retry(state):
             # "content" and "empty" are both final answers. An empty page is
-            # a CORRECT one — a hub category has no grid — so retrying it
+            # a CORRECT one — a query that matched nothing — so retrying it
             # would re-confirm the same right answer, and rotating the exit
             # would blame an address for the URL it was given.
             break
@@ -753,10 +753,10 @@ def _fetch_one_page(session, args, pool, page_num: int, url: str) -> PageOutcome
                     dump_path, len(html))
 
     # Only for a state page_flow already counts as BLOCKED. An EMPTY
-    # page is a correct answer, and a live run of a /p/<slug> hub
-    # reported exit 3 on a page the site had plainly served because the
-    # hub's own performance script names `akamaihd.net`. Mirrors
-    # playwright_scraper exactly.
+    # page is a correct answer, and on the sibling tokopedia-scraper a
+    # live run of a hub page reported exit 3 on a page that site had
+    # plainly served because its own performance script names
+    # `akamaihd.net`. Mirrors playwright_scraper exactly.
     vendor = (detect_bot_challenge(html, url=page.url)
               if page_flow.counts_as_blocked(state) else None)
     if vendor:
@@ -857,11 +857,10 @@ def scrape(args) -> int:
     blocked = False
     # All three modes are one row per business-at-a-location.
     dedupe_key = "sku"
-    # Only --mode product is single-page. A SHOP FRONT paginates exactly like
-    # a category listing — ?page=N, the same tiles — and treating it as
-    # single-page made `--mode shop --pages 2` fetch one page and report
-    # "complete", which is the silent-success failure this family exists to
-    # avoid. Found on the first live shop run.
+    # Only --mode profile is single-page. Both listing modes (search and
+    # category) paginate, and treating either as single-page would fetch one
+    # page and report "complete" — the silent-success failure this family
+    # exists to avoid.
     stop_reason = "single_page_mode" if args.mode == "profile" else "completed"
 
     pool = proxy_pool_from_args(args)
@@ -1058,8 +1057,8 @@ def parse_args():
                         "page fetching lives in playwright_scraper.py.")
     p.add_argument("--retries", type=int, default=3,
                    help="Attempts per page load before giving up (default 3). "
-                        "A page that comes back EMPTY is not retried: an empty "
-                        "hub category is a correct answer, not a fault.")
+                        "A page that comes back EMPTY is not retried: a query "
+                        "that matched nothing is a correct answer, not a fault.")
     p.add_argument("--retry-delay", type=float, default=2.0,
                    help="Seconds before the first retry, doubling thereafter")
     p.add_argument("--format", choices=["json", "csv", "both"], default="both")

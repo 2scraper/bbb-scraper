@@ -142,8 +142,7 @@ class PageOutcome:
     load_failed: bool = False
     # The page_flow state this page came back as ("content", "blocked",
     # "challenge", "empty", "unknown"). Carried so the caller can tell an
-    # EMPTY page — a /p/<slug> hub, a no-match query, or one page past the
-    # end of a listing — from a page that failed. Both produce zero rows and
+    # EMPTY page — a query that matched nothing — from a page that failed. Both produce zero rows and
     # they mean opposite things.
     state: Optional[str] = None
     # What BBB itself said the result set was: `totalResults` and
@@ -840,8 +839,8 @@ def _fetch_one_page(session, args, pool, page_num: int, url: str) -> PageOutcome
 
         if not page_flow.should_retry(state):
             # "content" and "empty" are both final answers. An empty page is
-            # a CORRECT one — a hub category has no grid, and one page past
-            # the end of a listing has no products — so retrying it would
+            # a CORRECT one — a query that matched nothing was served exactly
+            # as asked — so retrying it would
             # spend the user's budget re-confirming the same right answer,
             # and rotating the exit would blame an address for the URL it was
             # given.
@@ -943,10 +942,10 @@ def _fetch_one_page(session, args, pool, page_num: int, url: str) -> PageOutcome
     # is the "detected is not blocking" rule the captcha default follows,
     # applied to the blocking decision instead of the spending one. But
     # `state != "content"` is still too wide: an EMPTY page is a correct
-    # answer, and a live run of a /p/<slug> hub reported exit 3 on a 191 KB
-    # page the site had plainly served, because the hub's own performance
-    # script names `akamaihd.net` and "akamai" was in the marker list. Both
-    # halves were wrong; the marker is gone (see
+    # answer, and on the sibling tokopedia-scraper a live run of a hub page
+    # reported exit 3 on a 191 KB page that site had plainly served, because
+    # its own performance script names `akamaihd.net` and "akamai" was in the
+    # marker list. Both halves were wrong; the marker is gone (see
     # product_parser.BOT_CHALLENGE_MARKERS) and this now only refines the
     # REASON for a page the policy had already given up on.
     vendor = (detect_bot_challenge(html, url=session.page.url)
@@ -1524,8 +1523,8 @@ def parse_args():
                    help="Attempts per page load before giving up (default 3). "
                         "The pause between attempts doubles each time. A page "
                         "that comes back EMPTY is not retried — see "
-                        "page_flow.STATE_POLICY — because an empty hub "
-                        "category is a correct answer, not a fault.")
+                        "page_flow.STATE_POLICY — because a query that "
+                        "matched nothing is a correct answer, not a fault.")
     p.add_argument("--retry-delay", type=float, default=2.0,
                    help="Seconds before the first page-load retry, doubling "
                         "thereafter (default 2.0)")

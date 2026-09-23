@@ -12,24 +12,22 @@ body:
 
         Two things answer most reports faster than we can:
 
-        - **Everything exit 3?** Check the exit address first. Etsy's
-          DataDome answers every datacentre and VPN IP with HTTP 403, so a run
-          from a VPS or a CI runner is blocked whatever else is set. If the
-          log says `t=bv`, a captcha key does not help — that challenge is
-          not solvable. The Scraping Browser API (`--cdp-endpoint`) is the
-          path that works; if a profile keeps refusing after three retries,
-          try a different `pid`.
-        - **Zero products?** You may be on a page that has none — a taxonomy
-          hub, or one page past the end of a listing. It answers 200 with
-          nothing on it, which is exit 4 and a correct answer. See
-          [TROUBLESHOOTING.md](../blob/main/TROUBLESHOOTING.md).
-        - **`rating` empty on every row?** That is expected on a listing run:
-          Etsy publishes no per-listing rating there. The stars you see on a
-          tile are the shop's and are in `shop_rating`. See the README.
-        - **Wrong currency or language?** Etsy decides both from your exit
-          IP, not from the URL — a request for `/fr/…` from a German exit is
-          redirected to `/de/…`. The row's `url` says which storefront
-          actually answered.
+        - **Exit 3 on `--mode profile`?** Check the exit address first. A
+          business profile page is behind Cloudflare and answers HTTP 403 to
+          a datacenter address every time, so a run from a VPS or a CI runner
+          is blocked whatever else is set. A residential exit or the Scraping
+          Browser API (`--cdp-endpoint`) is the path that works. The listing
+          modes (`search`, `category`) read BBB's own `/api/search` endpoint
+          and need neither.
+        - **Zero businesses?** The query may genuinely match nothing. That is
+          exit 4 and a correct answer.
+        - **Fewer rows than BBB says it matched?** BBB caps every query at 15
+          pages of 15. The sidecar's `capped_by_site` and `reachable_max` say
+          so; narrow the query (`--state`) to go deeper. See the README.
+        - **`rating_grade` / `rating_score` empty on some rows?** Expected: a
+          business BBB has not graded comes back as `rating: ""` with
+          `ratingScore: 0.0`, and both columns are written as null rather
+          than as zero.
 
   - type: dropdown
     id: engine
@@ -77,8 +75,7 @@ body:
       render: shell
       placeholder: |
         python3 playwright_scraper.py \
-          --url "https://www.etsy.com/search?q=handmade+mug" \
-          --pages 3 --out grills
+          --text restaurants --location "New York, NY" --pages 3
     validations:
       required: true
 
@@ -98,7 +95,7 @@ body:
     attributes:
       label: What you expected instead
       placeholder: >-
-        96 products, as the README says a category page yields.
+        15 businesses per page, as the README says a listing page yields.
     validations:
       required: true
 

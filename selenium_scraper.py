@@ -620,7 +620,7 @@ def _fetch_one_page(session, args, pool, page_num: int, url: str) -> PageOutcome
 
         if not page_flow.should_retry(state):
             # "content" and "empty" are both final answers. An empty page is
-            # a CORRECT one — a hub category has no grid — so retrying it
+            # a CORRECT one — a query that matched nothing — so retrying it
             # would re-confirm the same right answer, and rotating the exit
             # would blame an address for the URL it was given.
             break
@@ -682,9 +682,10 @@ def _fetch_one_page(session, args, pool, page_num: int, url: str) -> PageOutcome
     # --cdp-endpoint the Scraping Browser's own auto-solve extension injects
     # such markers into every page it loads.
     # Only for a state page_flow already counts as BLOCKED. An EMPTY page is
-    # a correct answer, and a live run of a /p/<slug> hub reported exit 3 on
-    # a page the site had plainly served because the hub's own performance
-    # script names `akamaihd.net`. Mirrors playwright_scraper exactly.
+    # a correct answer, and on the sibling tokopedia-scraper a live run of a
+    # hub page reported exit 3 on a page that site had plainly served because
+    # its own performance script names `akamaihd.net`. Mirrors
+    # playwright_scraper exactly.
     vendor = (detect_bot_challenge(html, url=d["current_url"]())
               if page_flow.counts_as_blocked(state) else None)
     if vendor:
@@ -995,8 +996,8 @@ def parse_args():
                         "page fetching lives in playwright_scraper.py.")
     p.add_argument("--retries", type=int, default=3,
                    help="Attempts per page load before giving up (default 3). "
-                        "A page that comes back EMPTY is not retried: an empty "
-                        "hub category is a correct answer, not a fault.")
+                        "A page that comes back EMPTY is not retried: a query "
+                        "that matched nothing is a correct answer, not a fault.")
     p.add_argument("--retry-delay", type=float, default=2.0,
                    help="Seconds before the first retry, doubling thereafter")
     p.add_argument("--format", choices=["json", "csv", "both"], default="both")
