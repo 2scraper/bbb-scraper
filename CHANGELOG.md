@@ -10,7 +10,48 @@ When it does, the release notes lead with it.
 
 ## [Unreleased]
 
+> **Behaviour change for existing users:** a page BBB serves that cannot be
+> read now fails the run instead of ending it. A run that used to finish
+> `complete` with exit 0 on such a page now finishes `partial` with exit 6
+> (rows were gathered) or exit 5 (none were), and its sidecar names the page
+> in `pages_failed` with `stop_reason: "unreadable_response"`. A pipeline
+> that branched on exit 0 was reading an unread page as the end of a listing.
+
 ### Fixed
+
+- **A served page that could not be read was taken for the end of the
+  listing.** `unknown` (BBB's page, neither the listing payload nor its own
+  empty-result marker) left the page outcome `ok` with no rows, so the loop
+  read "added nothing new" as the end of the results. Reproduced with the
+  real fetch and finish code and only the browser replaced: page 1 good,
+  page 2 with the row container renamed, page 3 good gave `complete`,
+  `no_new_products`, exit 0, page 3 never requested. The same state on page 1
+  was worse: pages 2 and 3 were still fetched and the run reported `complete`
+  over 14 rows instead of 21, the first page lost without a trace. An
+  unreadable page is now a failed page in all three engines. A CONFIRMED
+  empty result set (`totalResults: 0`) is unchanged: it is still a finished
+  page and still ends a run as complete.
+
+- **The captcha budget was advisory.** `handle_captcha_if_present` runs once
+  before a page is classified and once after, and only the second call was
+  counted, while the first repeats on every block-retry: three solver calls
+  against `SOLVES_PER_PAGE = 1`, reproduced with the solver stubbed and no
+  proxy pool. The allowance is now one `page_flow.SolveBudget` per page,
+  spent at the call to the solver itself in all three engines (counting calls
+  would have spent it on a call that found no captcha). It does not reset on
+  rotation. There is deliberately no run-wide cap on top of it: a run of N
+  pages that each need a solve has bought what it needed.
+
+- **`diff_runs.py` compared two different queries.** The sort guard caught two
+  orderings of one query and nothing caught two queries, so `restaurants` in
+  New York against `restaurants` in Chicago, both a-z, both complete, was
+  accepted and every line of the diff was the change of city. The scope is
+  now read from each sidecar's `final_url` (query text, location, `--state`,
+  category; page, sort, host and `www.` ignored) and a mismatch is refused,
+  with `--force` as before. A run the user cut at `--pages 3` is refused
+  against one that read 15 for the same reason; a listing that merely ran
+  out of pages is not. `diff_runs.py` had no behavioural check at all
+  (CI ran `--help`), so its sort and completeness guards are pinned too.
 
 - **The Scraper API path (`scraper_api_client.py`) failed whenever a wait flag
   was given, and never saw the target's status.** Measured 2026-09-23 against

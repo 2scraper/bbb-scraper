@@ -159,9 +159,28 @@ class PageOutcome:
     # what we asked for.
     sort_applied: Optional[str] = None
 
+    # True when BBB served something and it could not be read: the page_flow
+    # state is "unknown" after every wait and retry, i.e. neither the listing
+    # payload nor a recognisable empty result set. NOT a finished page. It
+    # used to leave `ok` True with no rows, which the loop then read as "this
+    # page added nothing new" -- the end of the listing -- and reported a
+    # COMPLETE run, exit 0, over a page it never read. On page 1 the same
+    # state cost the whole first page of a run that still said complete.
+    unreadable: bool = False
+
     @property
     def ok(self) -> bool:
-        return not self.load_failed and self.blocked_by is None
+        return (not self.load_failed and self.blocked_by is None
+                and not self.unreadable)
+
+    @property
+    def failure_reason(self) -> str:
+        """The `stop_reason` for a page that is not ok."""
+        if self.load_failed:
+            return "page_load_timeout"
+        if self.unreadable:
+            return "unreadable_response"
+        return f"blocked_{self.blocked_by}"
 
 
 ITEM_LINK_SELECTOR = page_flow.READY_SELECTOR_LISTING
@@ -601,8 +620,11 @@ def _snapshot(page, url: str) -> Optional[str]:
     return _content_when_settled(page)
 
 
-def handle_captcha_if_present(page, args) -> bool:
+def handle_captcha_if_present(page, args, budget=None) -> bool:
     """Detect and solve a challenge. True if something was solved.
+
+    `budget` is spent immediately before the solver is called, so every
+    caller shares one allowance per page. See page_flow.SolveBudget.
 
     Runs after EVERY navigation, for ANY page — not scoped to one URL. The
     static-HTML and runtime reCAPTCHA detectors are run and reconciled
@@ -655,6 +677,11 @@ def handle_captcha_if_present(page, args) -> bool:
         logger.warning("No 2captcha API key, so this challenge cannot be "
                        "solved — continuing with whatever the page already "
                        "holds.")
+        return False
+    if budget is not None and not budget.spend():
+        logger.warning("%s detected, but this page's solve budget (%d) is "
+                       "spent — not buying another token.", challenge.kind,
+                       budget.limit)
         return False
     try:
         token = solve_recaptcha(challenge, args.twocaptcha_key,
@@ -734,7 +761,7 @@ def _fetch_one_page(session, args, pool, page_num: int, url: str) -> PageOutcome
     # Counted across the whole block-retry loop, not per attempt: a page that
     # keeps coming back as a challenge would otherwise buy one solve per
     # rotation, which is how a run quietly turns into a bill.
-    solves_bought = 0
+    budget = page_flow.SolveBudget()
     html, state, load_failed = None, "ok", False
 
     for block_attempt in range(block_retries + 1):
@@ -776,7 +803,7 @@ def _fetch_one_page(session, args, pool, page_num: int, url: str) -> PageOutcome
         if load_failed:
             break
 
-        if handle_captcha_if_present(session.page, args):
+        if handle_captcha_if_present(session.page, args, budget):
             # A solve navigated the page. Give the destination a moment
             # before judging what came back.
             session.page.wait_for_timeout(1000)
@@ -819,10 +846,8 @@ def _fetch_one_page(session, args, pool, page_num: int, url: str) -> PageOutcome
         # there would be a charge for nothing. That distinction is the whole
         # reason page_flow separates the two states, and it is bounded by
         # SOLVES_PER_PAGE so a rotation loop cannot become a bill.
-        if (page_flow.should_solve(state)
-                and solves_bought < page_flow.SOLVES_PER_PAGE):
-            solves_bought += 1
-            if handle_captcha_if_present(session.page, args):
+        if page_flow.should_solve(state) and budget.left:
+            if handle_captcha_if_present(session.page, args, budget):
                 session.page.wait_for_timeout(1000)
                 html = _snapshot(session.page, url) or html
                 state = _classify(session.page, html)
@@ -971,8 +996,17 @@ def _fetch_one_page(session, args, pool, page_num: int, url: str) -> PageOutcome
         # Reached only for a state the policy says holds no rows — and it
         # says so in ONE place, so an engine cannot quietly decide to parse
         # something its twins would not.
-        logger.info("Page %d came back as %s; nothing to parse.", page_num,
-                    state)
+        # "Nothing to parse" is not "nothing there": the one state that gets
+        # here is `unknown`, a page BBB served that holds neither rows nor
+        # its own empty-result marker. A CONFIRMED empty set is state
+        # "empty", which parses (to zero rows) and is a finished page. This
+        # one is a page that could not be read, so it fails like a timeout
+        # does and the run is partial, not complete.
+        logger.error("Page %d came back as %s after %d attempt(s) and could "
+                     "not be read — treating it as a failed page, not as the "
+                     "end of the listing. Re-run with --dump-html.", page_num,
+                     state, block_retries + 1)
+        outcome.unreadable = True
         outcome.final_url = session.page.url
         return outcome
 
@@ -1244,8 +1278,7 @@ def scrape(args) -> int:
             outcomes.append(first)
 
             if not first.ok:
-                stop_reason = ("page_load_timeout" if first.load_failed
-                               else f"blocked_{first.blocked_by}")
+                stop_reason = first.failure_reason
                 blocked = first.blocked_by is not None
             elif args.mode == "profile":
                 pass  # one page is the whole run
@@ -1281,8 +1314,7 @@ def scrape(args) -> int:
                     failed = [o for o in rest if not o.ok]
                     if failed:
                         worst = min(failed, key=lambda o: o.page_num)
-                        stop_reason = ("page_load_timeout" if worst.load_failed
-                                       else f"blocked_{worst.blocked_by}")
+                        stop_reason = worst.failure_reason
                         blocked = any(o.blocked_by for o in rest)
                     elif exhausted:
                         stop_reason = "no_new_products"
@@ -1304,8 +1336,7 @@ def scrape(args) -> int:
                         outcome = _fetch_one_page(session, args, pool, page_num, url)
                         outcomes.append(outcome)
                         if not outcome.ok:
-                            stop_reason = ("page_load_timeout" if outcome.load_failed
-                                           else f"blocked_{outcome.blocked_by}")
+                            stop_reason = outcome.failure_reason
                             blocked = outcome.blocked_by is not None
                             break
 
