@@ -58,6 +58,7 @@ import pathlib
 import re
 import sys
 from typing import Dict, List, Optional, Tuple
+from urllib.parse import parse_qsl, urlsplit
 
 from output_writer import UNIQUE_BY_SKU_MODES
 
@@ -226,6 +227,37 @@ def _run_status(path: str) -> Tuple[Optional[str], Optional[dict]]:
     return meta.get("status"), meta
 
 
+def _scope_of(meta: Optional[dict]) -> Optional[Tuple[str, Tuple[Tuple[str, str], ...]]]:
+    """What a run asked BBB for, read from its sidecar, or None if unknown.
+
+    `final_url` is the endpoint the last page really came from, so it carries
+    everything that narrows a search (`find_text`, `find_loc`, `state`, a
+    category id) even where the user typed none of it in a URL. `page` and
+    `sort` are dropped: the first is where the run happened to stop and the
+    second has its own check, with its own message. The host is ignored, and
+    so is the `/api` prefix, so a run recorded from the rendered page and one
+    recorded from the endpoint describe the same scope.
+
+    From the sidecar rather than the rows on purpose: the rows carry no query,
+    and nothing about this needs the output to be JSON.
+    """
+    url = (meta or {}).get("final_url") or (meta or {}).get("start_url")
+    if not url:
+        return None
+    parts = urlsplit(url)
+    path = re.sub(r"^/api(?=/)", "", parts.path).rstrip("/").lower()
+    params = tuple(sorted((k.lower(), v.strip().lower())
+                          for k, v in parse_qsl(parts.query, keep_blank_values=True)
+                          if k.lower() not in ("page", "sort") and v.strip()))
+    return path, params
+
+
+def _describe_scope(scope) -> str:
+    path, params = scope
+    shown = ", ".join(f"{k}={v}" for k, v in params) or "no query"
+    return f"{path} ({shown})"
+
+
 def _check_comparable(args) -> bool:
     """Refuse an assortment diff between runs that are not both complete.
 
@@ -261,6 +293,46 @@ def _check_comparable(args) -> bool:
                 f"{label} ({path}) was a {status!r} run — stopped after "
                 f"{meta.get('pages_completed')} of {meta.get('pages_requested')} "
                 f"page(s), reason {meta.get('stop_reason')!r}")
+    # A SCOPE MISMATCH. The sort check below catches two orderings of ONE
+    # query; this catches two queries. `restaurants` in New York against
+    # `restaurants` in Chicago, both a-z and both search mode, is two
+    # different directories, and every `added`/`removed` line of a diff
+    # between them is the change of city rather than a change in a city.
+    scopes, covered = {}, {}
+    for label, path in (("--old", args.old), ("--new", args.new)):
+        status, meta = _run_status(path)
+        if status is None:
+            continue
+        scope = _scope_of(meta)
+        if scope is not None:
+            scopes[label] = scope
+        covered[label] = (meta.get("stop_reason"), meta.get("pages_completed"))
+    if len(set(scopes.values())) > 1:
+        problems.append(
+            "the two runs asked BBB for different things: --old "
+            f"{_describe_scope(scopes['--old'])} against --new "
+            f"{_describe_scope(scopes['--new'])}. Two queries are two "
+            "different directories, so `added`/`removed` would describe the "
+            "change of query. Both are complete and both are a sample, which "
+            "is why nothing else here would stop it.")
+    # And a run the USER cut short (`completed` = it reached its --pages
+    # limit, rather than running out of listing) against a longer one: the
+    # extra pages were never asked for, so their rows would read as added.
+    # A run that ended because the listing did (`no_new_products`,
+    # `page_cap_reached`) is not cut short, which is what lets a result set
+    # that shrank from 3 pages to 2 still be diffed.
+    if len(covered) == 2:
+        for label, other in (("--old", "--new"), ("--new", "--old")):
+            reason, pages = covered[label]
+            other_pages = covered[other][1]
+            if (reason == "completed" and isinstance(pages, int)
+                    and isinstance(other_pages, int) and pages < other_pages):
+                problems.append(
+                    f"{label} was asked for {pages} page(s) and {other} "
+                    f"holds {other_pages}: the rows on the extra pages were "
+                    f"never requested, so they would read as added or "
+                    f"removed. Re-run the shorter one with the same --pages.")
+
     if len(set(modes.values())) > 1:
         problems.append(
             f"the two runs are different modes ({modes}). A listing row and a "

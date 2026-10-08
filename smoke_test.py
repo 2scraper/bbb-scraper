@@ -28,6 +28,7 @@ is caught too.
 
 import argparse
 import ast
+import contextlib
 import csv
 import inspect
 import io
@@ -1715,6 +1716,334 @@ def check_scraper_api_sends_waitfor_as_an_object_and_reads_http_code():
           sent.get("waitFor") == {"text": 'BBB'}, repr(sent.get("waitFor")))
     check("Scraper API: the target status handed onward is http_code (403), not the API's 'success'",
           status == 403 and isinstance(status, int), repr(status))
+
+
+def _drive_scrape(engine, body_for_page, pages=3):
+    """Run the real `scrape()` with the browser replaced by a fake.
+
+    `body_for_page(n)` is what the site "answers" for page n. Returns
+    (exit code, sidecar dict, [page numbers requested]). Everything between
+    the fake browser and the exit code is the repo's own code, which is the
+    point: the first version of this audit finding was a state that only the
+    WHOLE loop turned into a wrong exit code.
+    """
+    requested = []
+
+    class FakePage:
+        url = ""
+        body = ""
+
+        def goto(self, url, **kwargs):
+            self.url = url
+            n = int(url.split("page=")[1].split("&")[0]) if "page=" in url else 1
+            requested.append(n)
+            self.body = body_for_page(n)
+
+        def wait_for_timeout(self, ms):
+            pass
+
+        def query_selector_all(self, selector):
+            return []
+
+        def screenshot(self, **kwargs):
+            pass
+
+    class FakeSession:
+        def __init__(self, *a, **k):
+            self.page = FakePage()
+            self.pool = None
+
+        def open(self):
+            return self
+
+        def close(self):
+            pass
+
+        def relaunch(self):
+            pass
+
+    class FakePlaywright:
+        def __enter__(self):
+            return None
+
+        def __exit__(self, *a):
+            return False
+
+    names = ("_snapshot", "handle_captcha_if_present", "_BrowserSession",
+             "sync_playwright")
+    saved = {n: getattr(engine, n) for n in names}
+    saved_argv, saved_sleep = sys.argv, engine.time.sleep
+    with tempfile.TemporaryDirectory() as tmp:
+        out = os.path.join(tmp, "r")
+        sys.argv = ["x", "--text", "restaurants", "--location", "New York NY",
+                    "--pages", str(pages), "--out", out, "--delay", "0",
+                    "--retries", "1"]
+        try:
+            args = engine.parse_args()
+            engine._snapshot = lambda page, url: page.body
+            engine.handle_captcha_if_present = lambda *a, **k: False
+            engine._BrowserSession = FakeSession
+            engine.sync_playwright = lambda: FakePlaywright()
+            engine.time.sleep = lambda s: None
+            with contextlib.redirect_stdout(io.StringIO()):
+                rc = engine.scrape(args)
+        finally:
+            sys.argv = saved_argv
+            engine.time.sleep = saved_sleep
+            for n, v in saved.items():
+                setattr(engine, n, v)
+        meta_path = out + ".meta.json"
+        meta = (json.load(open(meta_path, encoding="utf-8"))
+                if os.path.exists(meta_path) else {})
+    return rc, meta, requested
+
+
+def check_an_unreadable_page_is_not_the_end_of_the_listing():
+    """Audit 2026-10-08, P1: `unknown` after every retry was an ok page.
+
+    It carried no rows, so the sequential loop read "this page added nothing
+    new" as the end of the listing and reported a COMPLETE run, exit 0, with
+    page 3 never requested. On page 1 the same state silently dropped the
+    first page of a run that still said complete.
+    """
+    engine = _import_engine("playwright_scraper")
+    if engine is None:
+        return
+    import page_flow as PF
+    good = LISTING_PAYLOAD_JSON
+    # BBB's own totals intact, the row container moved: served, not empty,
+    # not readable. This is the shape a renamed field produces.
+    moved = good.replace('"results":[', '"items_renamed":[', 1)
+    check("fixture: a moved container really classifies as unknown",
+          moved != good and PF.classify(moved, 200, "https://www.bbb.org/api/search?page=2") == "unknown")
+    empty = re.sub(r'"totalResults":\d+', '"totalResults":0',
+                   re.sub(r'"results":\[.*?\],"sortTypes"', '"results":[],"sortTypes"',
+                          good, flags=re.S), count=1)
+    check("fixture: a confirmed empty result set classifies as empty",
+          PF.classify(empty, 200, "https://www.bbb.org/api/search?page=2") == "empty")
+
+    def page_n(n, bad=None, bad_body=moved):
+        # Distinct ids per page, so "no new products" cannot be the reason a
+        # run stops and mask the thing under test.
+        return bad_body if n == bad else good.replace('"id":"', '"id":"p%d_' % n)
+
+    rc, meta, requested = _drive_scrape(engine, lambda n: page_n(n, bad=2))
+    equal("unreadable page 2: exit 6, not 0", rc, 6)
+    equal("unreadable page 2: status is partial", meta.get("status"), "partial")
+    equal("unreadable page 2: the stop reason names it",
+          meta.get("stop_reason"), "unreadable_response")
+    equal("unreadable page 2: the failed page is listed", meta.get("pages_failed"), [2])
+    check("unreadable page 2: the run did not claim a page it never read",
+          meta.get("pages_completed") == 1, "pages_completed=%r" % meta.get("pages_completed"))
+
+    rc, meta, requested = _drive_scrape(engine, lambda n: page_n(n, bad=1))
+    equal("unreadable page 1: exit 5 (never obtained), not 0 and not 4", rc, 5)
+    check("unreadable page 1: nothing was written beside it", not meta)
+
+    # The other half, which is what keeps the fix from becoming a different
+    # bug: a CONFIRMED empty page is a finished page and ends a run cleanly.
+    rc, meta, requested = _drive_scrape(
+        engine, lambda n: page_n(n, bad=2, bad_body=empty))
+    equal("a confirmed empty page 2 still ends the run as complete", rc, 0)
+    equal("...with the no-new-products reason", meta.get("stop_reason"), "no_new_products")
+    equal("...and page 3 is not fetched after the end", requested, [1, 2])
+
+    for module in ("playwright_scraper", "selenium_scraper", "puppeteer_scraper"):
+        src = open(os.path.join(HERE, module + ".py"), encoding="utf-8").read()
+        check("%s: an `unknown` page marks the outcome unreadable" % module,
+              "outcome.unreadable = True" in src and "failure_reason" in src)
+        check("%s: no stop_reason is built from load_failed alone" % module,
+              '"page_load_timeout" if' not in src)
+
+
+def check_the_solve_budget_is_spent_at_the_purchase():
+    """Audit 2026-10-08, P2 (and §27.4): three solves against a limit of one.
+
+    `handle_captcha_if_present` runs before classification AND after it, and
+    only the second call was counted. Counting calls was also the wrong fix:
+    a call that finds no captcha buys nothing, so the budget is spent where
+    the solver is called.
+    """
+    import page_flow as PF
+    b = PF.SolveBudget()
+    equal("a fresh budget holds SOLVES_PER_PAGE", b.limit, PF.SOLVES_PER_PAGE)
+    check("the first purchase is allowed", b.spend())
+    check("the second is refused", not b.spend())
+    check("...and refusing spends nothing", b.spent == 1 and not b.left)
+    check("SolveBudget(0) never buys", not PF.SolveBudget(0).spend())
+
+    # Every engine: the solver call is behind the budget, the call sites pass
+    # it, and the old per-call counter is gone. Read from source on purpose:
+    # a check gated behind importing the engine skips for exactly the engines
+    # whose driver is absent (§27.4).
+    for module in ("playwright_scraper", "selenium_scraper", "puppeteer_scraper"):
+        tree = ast.parse(open(os.path.join(HERE, module + ".py"),
+                              encoding="utf-8").read())
+        calls = [n for n in ast.walk(tree) if isinstance(n, ast.Call)
+                 and getattr(n.func, "id", None) == "handle_captcha_if_present"]
+        check("%s: scanned the captcha call sites" % module, len(calls) == 2,
+              "found %d" % len(calls))
+        check("%s: every call site passes the budget" % module,
+              all(len(c.args) >= 3 for c in calls))
+        src = ast.unparse(tree)
+        check("%s: no per-call counter is left" % module, "solves_bought" not in src)
+        fn = next(n for n in ast.walk(tree) if isinstance(n, ast.FunctionDef)
+                  and n.name == "handle_captcha_if_present")
+        body = ast.unparse(fn)
+        check("%s: budget.spend() sits before solve_recaptcha()" % module,
+              0 <= body.find("budget.spend()") < body.find("solve_recaptcha("))
+
+    # Behaviour, with the solver stubbed: a challenge that survives its token
+    # across every block-retry must buy exactly SOLVES_PER_PAGE tokens.
+    engine = _import_engine("playwright_scraper")
+    if engine is None:
+        return
+
+    class Challenge:
+        kind = "recaptcha_v2"
+        source = "stub"
+        sitekey = "k"
+        action = None
+
+    bought = []
+
+    class Page:
+        url = "https://www.bbb.org/api/search?page=1"
+
+        def goto(self, *a, **k):
+            pass
+
+        def wait_for_timeout(self, ms):
+            pass
+
+        def query_selector_all(self, sel):
+            return []
+
+        def evaluate(self, *a, **k):
+            return None
+
+        def reload(self, **k):
+            pass
+
+        def screenshot(self, **k):
+            pass
+
+    class Session:
+        page = Page()
+
+        def relaunch(self):
+            pass
+
+    class Args:
+        retries = 1
+        retry_delay = 0
+        proxy_block_retries = 3
+        solve_captcha = "when-blocked"
+        twocaptcha_key = "stub-key"
+        captcha_api = "v2"
+        min_score = 0.3
+        out = "unused"
+        mode = "search"
+        dump_html = None
+        pages = 1
+
+    names = ("_content_when_settled", "detect_recaptcha_v3",
+             "detect_recaptcha_in_page", "reconcile_detections",
+             "solve_recaptcha", "_snapshot", "_classify")
+    saved = {n: getattr(engine, n) for n in names}
+    saved_sleep = engine.time.sleep
+    with tempfile.TemporaryDirectory() as tmp:
+        Args.out = os.path.join(tmp, "o")
+        try:
+            engine._content_when_settled = lambda page: "<html></html>"
+            engine.detect_recaptcha_v3 = lambda html, url: Challenge()
+            engine.detect_recaptcha_in_page = lambda *a, **k: None
+            engine.reconcile_detections = lambda a, b: a
+            engine.solve_recaptcha = lambda *a, **k: bought.append(1) or "token"
+            engine._snapshot = lambda page, url: "<html></html>"
+            # The page stays a challenge however many tokens it is given.
+            engine._classify = lambda page, html, status=None: "challenge"
+            engine.time.sleep = lambda s: None
+            engine._fetch_one_page(Session(), Args, None, 1,
+                                   "https://www.bbb.org/api/search?page=1")
+        finally:
+            engine.time.sleep = saved_sleep
+            for n, v in saved.items():
+                setattr(engine, n, v)
+    equal("a page that stays a challenge buys exactly SOLVES_PER_PAGE tokens",
+          len(bought), PF.SOLVES_PER_PAGE)
+
+
+def check_diff_refuses_two_runs_that_asked_for_different_things():
+    """Audit 2026-10-08, P3: two queries were accepted as one directory.
+
+    `diff_runs.py` had no behavioural check at all (CI ran its `--help`), so
+    the sort guard it does carry is pinned here too.
+    """
+    import argparse as _ap
+    import diff_runs as D
+
+    def run(tmp, name, *, final_url, status="complete", stop="completed",
+            pages=3, sort="a-z", meta=True):
+        path = os.path.join(tmp, name + ".json")
+        json.dump([{"sku": "s1", "title": "x", "sort": sort}], open(path, "w"))
+        if meta:
+            json.dump({"status": status, "stop_reason": stop, "mode": "search",
+                       "pages_completed": pages, "pages_requested": pages,
+                       "final_url": final_url},
+                      open(os.path.join(tmp, name + ".meta.json"), "w"))
+        return path
+
+    base = ("https://www.bbb.org/api/search?find_country=USA"
+            "&find_text=restaurants&find_loc=%s&page=%d&sort=%s")
+
+    def verdict(old, new):
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            ok = D._check_comparable(_ap.Namespace(old=old, new=new))
+        return ok, buf.getvalue()
+
+    with tempfile.TemporaryDirectory() as tmp:
+        ny = run(tmp, "ny1", final_url=base % ("New+York+NY", 3, "AToZ"))
+        ny2 = run(tmp, "ny2", final_url=base % ("new york ny", 1, "AToZ"))
+        chi = run(tmp, "chi", final_url=base % ("Chicago+IL", 3, "AToZ"))
+        ok, out = verdict(ny, ny2)
+        check("same query, different last page and spelling: comparable", ok, out)
+        ok, out = verdict(ny, chi)
+        check("different location: refused", not ok)
+        check("...and the reason names the two queries",
+              "asked BBB for different things" in out and "chicago" in out, out)
+        state = run(tmp, "nystate",
+                    final_url=base % ("New+York+NY", 3, "AToZ") + "&state=NY")
+        ok, out = verdict(ny, state)
+        check("same text and location, one narrowed by --state: refused",
+              not ok and "state=ny" in out, out)
+        ok, out = verdict(ny, run(tmp, "nosidecar", final_url="", meta=False))
+        check("a run with no sidecar is not refused on scope", ok, out)
+
+        bm = run(tmp, "bm", final_url=base % ("New+York+NY", 3, "Relevance"),
+                 sort="best-match")
+        ok, out = verdict(ny, bm)
+        check("different sort: still refused",
+              not ok and "different orderings" in out, out)
+
+        part = run(tmp, "part", final_url=base % ("New+York+NY", 2, "AToZ"),
+                   status="partial", stop="unreadable_response", pages=1)
+        ok, out = verdict(ny, part)
+        check("a partial run: still refused", not ok and "'partial'" in out, out)
+
+        cut = run(tmp, "cut", final_url=base % ("New+York+NY", 3, "AToZ"), pages=3)
+        full = run(tmp, "full", final_url=base % ("New+York+NY", 15, "AToZ"),
+                   pages=15)
+        ok, out = verdict(cut, full)
+        check("a run the user cut at 3 pages against one that read 15: refused",
+              not ok and "never requested" in out, out)
+        ok, out = verdict(full, cut)
+        check("...in either direction", not ok, out)
+        shrunk = run(tmp, "shrunk", final_url=base % ("New+York+NY", 2, "AToZ"),
+                     stop="no_new_products", pages=2)
+        ok, out = verdict(cut, shrunk)
+        check("a listing that RAN OUT of pages is not a cut-short run", ok, out)
 
 
 CHECKS = [v for k, v in sorted(globals().items()) if k.startswith("check_")]

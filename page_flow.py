@@ -190,6 +190,40 @@ BLOCK_RETRIES_WITHOUT_POOL = 1
 SOLVES_PER_PAGE = 1
 
 
+class SolveBudget:
+    """The solver purchases one page may make, spent at the purchase itself.
+
+    The engines call `handle_captcha_if_present` TWICE per attempt: once
+    before the page is classified, so a challenge is cleared before anything
+    is judged, and once after, for the state that says the page really is
+    gated. Only the second call used to be counted, and the first repeats on
+    every block-retry, so `SOLVES_PER_PAGE` was advisory: three solver calls
+    against a limit of one, reproduced with the solver stubbed.
+
+    So the count lives here and is spent by whoever is about to BUY, not by
+    whoever is about to ask. A call that finds no captcha spends nothing,
+    which is why counting calls was the wrong unit. There is deliberately no
+    reset on rotation: a fresh exit is a reason to re-fetch, not a fresh
+    allowance. One budget per page, and no run-wide cap on top, because a
+    run of N pages that each need a solve has bought what it needed.
+    """
+
+    def __init__(self, limit: Optional[int] = None):
+        self.limit = SOLVES_PER_PAGE if limit is None else limit
+        self.spent = 0
+
+    @property
+    def left(self) -> bool:
+        return self.spent < self.limit
+
+    def spend(self) -> bool:
+        """Take one purchase. False, spending nothing, once none are left."""
+        if not self.left:
+            return False
+        self.spent += 1
+        return True
+
+
 # ---------------------------------------------------------------------------
 # Pagination
 # ---------------------------------------------------------------------------
