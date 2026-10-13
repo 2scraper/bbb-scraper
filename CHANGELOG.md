@@ -10,6 +10,13 @@ When it does, the release notes lead with it.
 
 ## [Unreleased]
 
+> **Behaviour change:** `--retries 0` is now a usage error (exit 2). It used
+> to be accepted and made the page-load loop unreachable, so nothing was
+> fetched and the engine reported the browser's own blank page as a result:
+> exit 3 or 4 with a 39-byte "capture", in tens of milliseconds. If a
+> script of yours passes 0, pass **1**: the flag counts ATTEMPTS, so 1 means
+> "try once and do not retry".
+
 > **Behaviour change for existing users:** a page BBB serves that cannot be
 > read now fails the run instead of ending it. A run that used to finish
 > `complete` with exit 0 on such a page now finishes `partial` with exit 6
@@ -18,6 +25,14 @@ When it does, the release notes lead with it.
 > that branched on exit 0 was reading an unread page as the end of a listing.
 
 ### Fixed
+
+- **`--retries 0` fetched nothing and called it a result.** The load loop is
+  `range(1, retries + 1)`, so 0 never runs it and the engine judged
+  `about:blank`. Three third-party audits of this family ran exactly that and
+  reported a working scraper as broken. `--retries` now goes through
+  `page_flow.attempts` in every entry point; a check reads the source of each
+  one and calls the validator, so a new engine declaring the flag with a
+  plain int fails the suite.
 
 - **A served page that could not be read was taken for the end of the
   listing.** `unknown` (BBB's page, neither the listing payload nor its own
