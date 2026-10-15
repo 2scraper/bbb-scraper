@@ -67,6 +67,12 @@ When it does, the release notes lead with it.
 - **Dump and capture files were not ignored**: `X.page3` from
   `--dump-html`, a raw `.html` at the repository root, and `live/`,
   `out/`-style working directories.
+- **The profile canary went green without testing anything.** With no
+  `BBB_CDP_ENDPOINT` secret it skipped with a notice, and with one it
+  passed on exit 3 or 5. It now fails with an error naming the missing
+  secret, and every non-zero exit or empty result is red. The listing
+  canary needs no secret and stays scheduled; it now also fails explicitly
+  on zero rows.
 - `--solve-captcha` help, a docstring and the README's exit-code table
   described refusals and exit 5 inaccurately; corrected. Comments no longer
   point at documents a reader of this repository cannot open.
