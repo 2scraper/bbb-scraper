@@ -2,7 +2,7 @@
 product_parser.py
 -----------------
 Extracts business records from bbb.org. This module IS the site knowledge;
-the engines around it carry a dozen constants and nothing else (CLAUDE.md §1).
+the engines around it carry a dozen constants and nothing else.
 
 Where the data comes from, and why it is not the DOM
 ----------------------------------------------------
@@ -16,7 +16,7 @@ business — name, address, phone list, letter grade, numeric score,
 accreditation, categories, coordinates and BBB's own onward links. That is
 strictly more than the rendered tile shows, and it is the site's own data
 rather than an inference from markup, so it is the primary path — the same
-call CLAUDE.md §4 records for zimmo-scraper, where the site's own embedded
+call a sibling made for zimmo-scraper, where the site's own embedded
 JSON outranks even JSON-LD once confirmed live.
 
 There is no JSON-LD fallback here because there is nothing to fall back to:
@@ -93,8 +93,8 @@ log = logging.getLogger("product_parser")
 # values began `/us/` or `/ca/`, and none of them named another host.
 #
 # `bbb.org` without `www.` redirects to `www.bbb.org`, so both are accepted
-# and both normalise to the canonical one — CLAUDE.md §5's "check whether
-# hosts answer on www.", from the other direction.
+# and both normalise to the canonical one: whether hosts answer on
+# `www.` was checked, not assumed.
 HOSTS = ("www.bbb.org", "bbb.org")
 CANONICAL_HOST = "www.bbb.org"
 
@@ -254,7 +254,7 @@ def country_from_path(path: Optional[str]) -> Optional[str]:
 # ---------------------------------------------------------------------------
 
 def is_supported_url(url: str) -> Tuple[bool, str]:
-    """(supported, reason). The reason is the point (CLAUDE.md §5).
+    """(supported, reason). The reason is the point.
 
     A refusal that says "is not a BBB site" about a host that plainly is one
     sends the reader looking for a typo, so each refusal names what is
@@ -350,7 +350,7 @@ def api_url(*, country: str = "USA", text: str = "", location: str = "",
             # an EMPTY `find_text` answers HTTP 200 with `totalResults: 0`,
             # while the same filter with the category's label as the text
             # answers 234,844. A silent zero that looks like an empty
-            # category is the worst answer available here (§8), so this
+            # category is the worst answer available here, so this
             # cannot be built at all.
             raise ValueError(
                 "a category filter needs a non-empty `text` as well: BBB "
@@ -432,7 +432,7 @@ def pick_category_option(options: Sequence[Dict[str, str]],
     than scraping whatever BBB ranked first. That is the difference between
     a run that says "there is no such category, here is what BBB does have"
     and a run that quietly returns the wrong category's businesses while
-    reporting success (§5, §8).
+    reporting success.
     """
     if not options:
         return None, False
@@ -514,7 +514,7 @@ def parse_row(record: Dict[str, Any], *, page: Optional[int] = None,
     the id is what dedupe and diffing both key on, and a row without one is
     not comparable to anything. That has not been seen in 105 rows; it is
     handled because a silent partial row is this codebase's worst bug class
-    (§8).
+   .
     """
     if not isinstance(record, dict):
         return None
@@ -636,7 +636,7 @@ def parse_listing(payload: Any, *, page: Optional[int] = None,
     data = listing_payload(payload)
     if data is None:
         # Loudly, and with the reason: "0 businesses" from a page that held
-        # fifteen is indistinguishable from an empty category (§8).
+        # fifteen is indistinguishable from an empty category.
         log.warning("page %s: no listing payload found — neither the "
                     "/api/search JSON nor a __PRELOADED_STATE__.searchResult "
                     "on the page", page)
@@ -653,7 +653,7 @@ def parse_listing(payload: Any, *, page: Optional[int] = None,
             rows.append(row)
 
     if len(rows) != len(results):
-        # Loudly, per §8: a row silently dropped is indistinguishable from a
+        # Loudly: a row silently dropped is indistinguishable from a
         # business the site stopped listing.
         log.warning("page %s: %d of %d results had no id and were skipped",
                     page_number, len(results) - len(rows), len(results))
@@ -717,7 +717,8 @@ def pages_to_fetch(pages_requested: int, pages_available: Optional[int]) -> int:
 #
 # The negative measurement matters more than the positive one here, and this
 # list has been WRONG once already — see the `cf-turnstile` note below, which
-# is CLAUDE.md §18's rule biting for the third time in this family.
+# is "count a marker on a page you know is good" biting for the third
+# time in this family.
 #
 # Counted 2026-09-16 across every capture, where "served" means a page BBB
 # really answered with (five of them fetched through the 2Captcha Scraping
@@ -750,8 +751,8 @@ def pages_to_fetch(pages_requested: int, pages_available: Optional[int]) -> int:
 #       good pages and misses half the bad ones is worse than no marker.
 #
 #       Note what is NOT done about it: the extension's script tags are not
-#       stripped before matching. §19 says to add that guard "only if your
-#       marker set can actually match one", and with `cf-turnstile` gone, none
+#       stripped before matching. That guard is worth adding only if the
+#       marker set can actually match one, and with `cf-turnstile` gone, none
 #       of the entries below matches anything that extension injects. Adding
 #       the strip would be dead code that looks load-bearing.
 #
@@ -770,7 +771,7 @@ BOT_CHALLENGE_MARKERS = (
 
 # BBB HAS ITS OWN CAPTCHA, and it is not the one above.
 #
-# §18's "no challenge rendered is not no captcha configured": every page BBB
+# "No challenge rendered" is not "no captcha configured": every page BBB
 # serves carries a reCAPTCHA **Enterprise** configuration, for its own forms
 # rather than for readers —
 #
@@ -786,18 +787,26 @@ BOT_CHALLENGE_MARKERS = (
 
 # What the hard refusal says. BBB serves it under its OWN branding — the
 # `<title>` is "You have been blocked | Better Business Bureau®" — so a title
-# check calls it a real page, which is CLAUDE.md §18's inverted-detection
-# case on a third site.
+# check calls it a real page, which is the inverted-detection case on a
+# third site.
 BLOCK_PAGE_MARKERS = (
     "You have been blocked",
     "Sorry, you have been blocked",
 )
 
+# BBB's own 404 template names itself in the `<title>`: "Page not found |
+# Better Business Bureau(R)" (captured 2026-09-16 for a withdrawn profile
+# path). Read from the BODY as well as from the status because Selenium has
+# no HTTP status to give the classifier, and a reader that only works for two
+# engines of three makes them disagree about the same URL.
+NOT_FOUND_TITLE_RE = re.compile(
+    r"<title>\s*Page not found\s*\|\s*Better Business Bureau", re.I)
+
 # The positive signal, and the one that decides the ambiguous cases: a page
 # BBB actually served is BUILT OUT OF BBB'S OWN ASSETS. Both interstitials
 # reference neither host; the served 404 references them three times.
 #
-# This is the `assets.mmsrg.com` trick from §8, and it is what catches the
+# This is the `assets.mmsrg.com` trick from a sibling repo, and it is what catches the
 # failure modes a marker list cannot: the hard block page (which carries no
 # challenge marker at all), and Chromium's own network-error page (which
 # carries the site's hostname in its `<title>` and would otherwise read as
@@ -836,10 +845,11 @@ def looks_like_api_payload(text: str) -> bool:
 
 def detect_page_state(html: str, status: Optional[int] = None,
                       url: str = "") -> str:
-    """One of "content", "empty", "blocked", "challenge", "unknown".
+    """One of "content", "empty", "not_found", "blocked", "challenge",
+    "unknown".
 
     Ordered by how much each signal PROVES, not by how cheap it is to
-    compute — CLAUDE.md §17's classification-order trap. An unambiguous
+    compute — the classification-order trap. An unambiguous
     positive ("this response IS the API payload", "this page says it is a
     challenge") is decided before the asset-reference heuristic, so a real
     answer that happens to be minimal is never reported as blocked.
@@ -847,7 +857,7 @@ def detect_page_state(html: str, status: Optional[int] = None,
     `status` is positional-friendly and second, matching the rest of the
     family: every engine calls `classify(html, status, url)` and a signature
     that disagreed crashed two of three engines on their first fetch in a
-    sibling repo (§17).
+    sibling repo.
     """
     text = html or ""
 
@@ -877,6 +887,13 @@ def detect_page_state(html: str, status: Optional[int] = None,
     # 3. Unambiguous: the hard refusal names itself.
     if any(marker in text for marker in BLOCK_PAGE_MARKERS):
         return "blocked"
+
+    # 3b. Unambiguous: BBB's own 404, by its status or by its own title. A
+    #     terminal answer about the ADDRESS — a mistyped or withdrawn
+    #     profile URL — so it must not be waited on, retried or called
+    #     blocked. Decided after the refusal markers, which are stronger.
+    if status == 404 or NOT_FOUND_TITLE_RE.search(text[:4096]):
+        return "not_found"
 
     # 4. The status, which on this site is a real signal rather than a
     #    formality: BBB answers a refused request 403 and a served page 200
@@ -910,7 +927,7 @@ def parse_products(payload: Any, url: str = "", page: int = 1,
     `__PRELOADED_STATE__.searchResult`. It RAISES on input that is neither,
     rather than returning `[]` — a function that quietly returns nothing on
     input it does not understand is this codebase's most common historical
-    bug class (§8), and "0 businesses" from a page that had 15 is
+    bug class, and "0 businesses" from a page that had 15 is
     indistinguishable from an empty category.
     """
     if listing_payload(payload) is None:
@@ -1089,7 +1106,7 @@ def parse_profile(source: Any, url: str = "", *,
     Returns None rather than an empty row when the page carries no
     `businessProfile`: "the profile had no data" and "this was not a profile
     page" are different things, and only the caller knows which it asked
-    for (§8).
+    for.
 
     `sku` is rebuilt as `{bbbId}_{businessId}_{addressId}` so a profile row
     JOINS a listing row on the family's own key. It has to be rebuilt
@@ -1136,7 +1153,7 @@ def parse_profile(source: Any, url: str = "", *,
         # null rather than reconstructed from the grade: the listing
         # measurement shows several distinct scores map to one letter
         # (A+ spans 97.0 to 100.0), so inverting the mapping would invent a
-        # precision the page does not have (§8).
+        # precision the page does not have.
         rating_score=None,
         is_accredited=_bool_or_none(
             _nested(profile, "accreditationInformation", "isAccredited")),

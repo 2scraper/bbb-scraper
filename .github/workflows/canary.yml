@@ -12,9 +12,11 @@
 # exactly the case this proves.
 #
 # The PROFILE path is different — it fetches a Cloudflare-gated page — so that
-# half is guarded on a secret and SKIPS with a ::notice:: when the secret is
-# absent. A check that is always red teaches everyone to ignore checks
-# (CLAUDE.md §11).
+# half needs a Scraping Browser endpoint. Without the secret it FAILS with an
+# ::error:: naming the secret rather than going green: a skipped job did not
+# test the site, and a green badge over an untested path is a claim nobody
+# measured. Exit 3 (blocked), exit 5 (never reached the page) and zero rows
+# are failures too.
 #
 #     gh secret set BBB_CDP_ENDPOINT --repo 2scraper/bbb-scraper
 #
@@ -52,7 +54,7 @@ jobs:
 
       # >= 3 pages, because with one page pagination is never exercised —
       # which is exactly how a silent single-page bug survived in a sibling
-      # repo (§11).
+      # repo.
       - name: Run
         id: run
         run: |
@@ -87,6 +89,9 @@ jobs:
 
           meta = json.load(open("canary.meta.json"))
           rows = json.load(open("canary.json"))
+          if not rows:
+              print("::error::The listing run wrote zero rows.")
+              sys.exit(1)
           print(json.dumps(meta, indent=1))
 
           failures = []
@@ -173,20 +178,19 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Explain the skip
+      - name: Require the secret
         if: env.HAVE_CDP != 'true'
         run: |
-          echo "::notice::Skipping the profile run: no BBB_CDP_ENDPOINT secret is set."
+          echo "::error::Missing secret BBB_CDP_ENDPOINT — the profile canary cannot test the site."
           echo "A business profile page is Cloudflare-gated, and a GitHub runner is a"
-          echo "datacenter address, so this half cannot pass without a residential exit."
-          echo "The LISTING job above needs no credentials and is the real canary."
+          echo "datacenter address, so this job needs a Scraping Browser endpoint:"
           echo ""
           echo "    gh secret set BBB_CDP_ENDPOINT --repo 2scraper/bbb-scraper"
           {
-            echo "### Profile canary skipped"
-            echo "No \`BBB_CDP_ENDPOINT\` secret. The listing canary covers the parser;"
-            echo "this job covers the gated page only."
+            echo "### Profile canary did not run"
+            echo "Missing secret \`BBB_CDP_ENDPOINT\`. Nothing about the gated page was tested."
           } >> "$GITHUB_STEP_SUMMARY"
+          exit 1
 
       - uses: actions/setup-python@v5
         if: env.HAVE_CDP == 'true'
@@ -207,7 +211,7 @@ jobs:
           # Through the ENVIRONMENT, not a --flag: env_config.py already reads
           # exactly this name, an unset secret arrives as an empty string
           # which the loader treats as unset, and the credential never reaches
-          # a command line (§3, §11).
+          # a command line.
           BBB_CDP_ENDPOINT: ${{ secrets.BBB_CDP_ENDPOINT }}
         run: |
           set +e
@@ -224,22 +228,26 @@ jobs:
           python - <<'PY'
           import json, os, sys
           code = int(os.environ["EXIT_CODE"])
+          # Every non-zero exit is red: a run that was blocked or never
+          # reached the page tested nothing, and a green job would say it had.
           if code == 3:
-              # Access, not a regression — and not a failure of this repo.
-              print("::warning::Blocked (exit 3). The Scraping Browser profile "
-                    "was refused or has expired. Nothing was tested; this is "
-                    "access rather than a parser regression.")
-              sys.exit(0)
+              print("::error::Blocked (exit 3). The page was refused through "
+                    "the Scraping Browser endpoint; nothing was tested.")
+              sys.exit(1)
           if code == 5:
-              print("::warning::Remote API error (exit 5). If the log says "
-                    "'profile_locked', another run still holds this pid — give "
-                    "CI its own. Otherwise the secret has expired.")
-              sys.exit(0)
+              print("::error::Nothing was obtained (exit 5). Read the log for "
+                    "the endpoint's own answer: 'profile_locked' means another "
+                    "run holds this pid; a 401 means the credentials were "
+                    "refused.")
+              sys.exit(1)
           if code != 0:
               print(f"::error::The profile run exited {code}.")
               sys.exit(1)
 
           rows = json.load(open("canary_profile.json"))
+          if not rows:
+              print("::error::The profile run wrote zero rows.")
+              sys.exit(1)
           row = rows[0]
           failures = []
           if len(rows) != 1:

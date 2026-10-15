@@ -2,7 +2,7 @@
 page_flow.py
 ------------
 The retry / solve / blocked decision, as DATA rather than as three copies of
-an if-chain (CLAUDE.md §1).
+an if-chain.
 
 BBB answers a request five ways, and four of them want a different response:
 
@@ -20,7 +20,7 @@ Nothing here imports a browser, and **no JavaScript crosses this boundary**:
 Selenium's `execute_script` takes a function BODY with an explicit `return`
 while Playwright and pyppeteer take `() => expr`, so a shared snippet would
 quietly acquire one driver's dialect. The callbacks below are named for the
-OPERATION instead, and each engine spells it in its own dialect (§1).
+OPERATION instead, and each engine spells it in its own dialect.
 """
 
 import logging
@@ -39,7 +39,7 @@ log = logging.getLogger("page_flow")
 
 # How many business records mean "this response is a listing".
 #
-# `> 1` on purpose, per CLAUDE.md §5: waiting for ONE match resolves on
+# `> 1` on purpose: waiting for ONE match resolves on
 # something unrelated long before the listing is really there. BBB serves a
 # fixed `pageSize` of 15 and every captured page held exactly 15, so four is
 # a floor that a real page clears instantly and a half-arrived one does not.
@@ -47,8 +47,8 @@ MIN_CARD_MATCHES = 4
 
 # A listing page's own readiness anchor for the browser engines. BBB's search
 # results are a list of profile links, and a profile path is a six-segment
-# contract with search engines rather than a build-generated class — §4's
-# "anchor on a URL pattern, never a CSS class".
+# contract with search engines rather than a build-generated class: anchor
+# on a URL pattern, never on a CSS class.
 READY_SELECTOR_LISTING = 'a[href*="/profile/"]'
 
 # A profile page states the business's name in an `h1`.
@@ -74,7 +74,7 @@ def content_timeout_ms(mode: str) -> int:
 #
 # Polled through `count(selector)` — a callback each engine implements with
 # its own `querySelectorAll` call — and NEVER by handing the browser a string
-# to evaluate. CLAUDE.md §18: a site whose Content-Security-Policy omits
+# to evaluate. Measured on a sibling site: a site whose Content-Security-Policy omits
 # `unsafe-eval` kills `wait_for_function` with an `EvalError` and takes the
 # run down with exit 1. BBB has not been measured for that, and the cheap
 # habit costs nothing on a site that would have allowed it.
@@ -112,7 +112,7 @@ def classify(html: Optional[str], status: Optional[int] = None,
     url=...)` in two of three engines against a callee that took `status`
     second, and both crashed on their first fetch — invisible to import,
     `--help`, `compileall` and 400+ green offline assertions, because none of
-    those calls a function the way a live run does (§17). `smoke_test.py`
+    those calls a function the way a live run does. `smoke_test.py`
     binds every engine's call against this signature for that reason.
     """
     return detect_page_state(html or "", status, url)
@@ -137,6 +137,12 @@ STATE_POLICY = {
     # A fresh browser from a different exit clears it too, which is why
     # `retry` is also True.
     "challenge": {"retry": True,  "solve": True,  "blocked": True,  "parse": False},
+    # The address does not exist: BBB's own 404 (by status, or by its own
+    # title where the driver gives no status). TERMINAL — retrying spends a
+    # fetch on something that will never be there — and not blocked, because
+    # exit 3 would send the reader after a proxy problem when the URL is
+    # simply wrong. Not parsed: the page holds no rows.
+    "not_found": {"retry": False, "solve": False, "blocked": False, "parse": False},
     # Served by BBB — its own assets are on the page — but not the listing
     # payload. A wait, not a spend.
     "unknown":   {"retry": True,  "solve": False, "blocked": False, "parse": False},
@@ -164,7 +170,7 @@ def should_parse(state: str) -> bool:
 # True here, and CONSULTED rather than merely documented — the engines read
 # it, so setting it False really does stop the retry loop. (A sibling repo
 # carried this constant with a paragraph of justification and no reader,
-# which is the same defect as dead code that looks load-bearing: §17.)
+# which is the same defect as dead code that looks load-bearing.)
 #
 # True because on BBB a re-fetch genuinely can change the answer. The
 # Scraping Browser was measured serving a page normally that a datacenter
@@ -236,7 +242,7 @@ def pagination_is_addressable(url: str) -> bool:
     ids with page 1, and the same holds for a category query. BBB paginates
     by an ordinary `?page=N` on an otherwise identical query.
 
-    This is the question CLAUDE.md §18 says to ask PER URL rather than per
+    This question is asked PER URL rather than per
     site — a sibling repo has one page kind that paginates and one that does
     not, where a `page_url()` used unconditionally reported a complete run
     holding page 1. On BBB both kinds answer the same way, so this returns
@@ -265,7 +271,7 @@ def concurrency_limit(cdp_endpoint: Optional[str]) -> Optional[int]:
 
     The Scraping Browser API allows ONE live connection per profile, so N
     workers sharing a `pid` collide with `profile_locked`. Several `pid`s,
-    one run each, is the way to parallelise that path (§7).
+    one run each, is the way to parallelise that path.
     """
     return 1 if cdp_endpoint else None
 
@@ -313,3 +319,27 @@ def attempts(value) -> int:
             f"With 0 the load loop never runs, nothing is fetched, and the "
             f"engine reports the browser's blank page as a result.")
     return number
+
+
+def at_least(minimum, kind=int):
+    """argparse `type=` factory: a number of `kind` no smaller than `minimum`.
+
+    For the flags that count or wait: --pages, --concurrency, --delay,
+    --retry-delay, --proxy-block-retries. A negative value there is never
+    meaningful — `range()` quietly runs zero times and `time.sleep` raises
+    halfway through a run — so it is refused up front, and argparse names
+    the flag in the error ("argument --pages: must be at least 1, not 0").
+    """
+    def parse(value):
+        try:
+            number = kind(value)
+        except (TypeError, ValueError):
+            raise _argparse.ArgumentTypeError(
+                f"must be {'an integer' if kind is int else 'a number'}, "
+                f"not {value!r}")
+        if number < minimum:
+            raise _argparse.ArgumentTypeError(
+                f"must be at least {minimum}, not {value}")
+        return number
+    parse.__name__ = f"at_least_{minimum}"
+    return parse

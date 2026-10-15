@@ -81,14 +81,27 @@ CREDENTIAL_ALLOWED = (
 HEX32 = re.compile(r"\b[0-9a-f]{32}\b")
 # Contexts in which a 32-hex string is plainly not a key. Site-specific
 # entries belong here only once a committed fixture actually carries one —
-# CLAUDE.md §16: a family-wide entry copied without checking is how dead
-# code spreads. Kept as a CONTEXT allowlist rather than by loosening the
+# a family-wide entry copied without checking is how dead code spreads. Kept as a CONTEXT allowlist rather than by loosening the
 # pattern: a bare 32-hex string anywhere else still fails, which is the
 # point of the check.
 HEX32_ALLOWED = ("sha", "hash", "nonce", "example", "md5", "digest",
                  "checksum")
 
-SCANNED_SUFFIXES = (".py", ".md", ".txt", ".yml", ".yaml", ".example")
+SCANNED_SUFFIXES = (".py", ".md", ".txt", ".yml", ".yaml", ".example",
+                    ".json", ".csv", ".html", ".toml", ".cfg", ".ini", ".sh")
+
+# Directories never worth reading, matched against the path RELATIVE to the
+# repository root. Matching the absolute path skipped everything once the
+# clone itself lived under a directory with one of these names: a clone
+# under `~/venv/…` scanned 0 files and reported "nothing credential-shaped".
+SKIPPED_DIRS = {".git", "__pycache__", ".venv", "venv"}
+
+
+def _is_env_file(path):
+    """`.env`, `.env.bak`, `.env.local`, ... — the copies people make of the
+    one file that holds a key. Their suffix is anything at all, so they are
+    recognised by name rather than by suffix."""
+    return path.name == ".env" or path.name.startswith(".env.")
 
 
 # A directory holding `pyvenv.cfg` is a virtualenv, whatever it is called.
@@ -99,7 +112,7 @@ SCANNED_SUFFIXES = (".py", ".md", ".txt", ".yml", ".yaml", ".example")
 # into pip's vendored code and flags a 32-hex string in `_elffile.py` as
 # key-shaped. Correct about the string, wrong about the file — and it is the
 # FIRST thing a new user sees from `python3 smoke_test.py`. A guard people
-# have to argue with is one they learn to suppress (CLAUDE.md §22).
+# have to argue with is one they learn to suppress.
 #
 # Deliberately NOT a narrowing of what gets scanned: an untracked file is
 # still read, because a key pasted into a scratch file beside the scripts is
@@ -128,10 +141,12 @@ def _is_in_virtualenv(path):
 
 def scanned_files():
     for path in sorted(REPO.rglob("*")):
-        if not path.is_file() or path.suffix not in SCANNED_SUFFIXES:
+        if not path.is_file():
             continue
-        if any(part in {".git", "__pycache__", ".venv", "venv"}
-               for part in path.parts):
+        if path.suffix not in SCANNED_SUFFIXES and not _is_env_file(path):
+            continue
+        if any(part in SKIPPED_DIRS
+               for part in path.relative_to(REPO).parts[:-1]):
             continue
         if _is_in_virtualenv(path):
             continue
@@ -197,9 +212,8 @@ def sample_check():
         failed.append("sample_output.csv header differs from output_writer.Business")
 
     if not failed:
-        discounted = sum(1 for r in rows if r.get("original_price"))
         print(f"ok       {len(rows)} rows, {len(expected)} columns, "
-              f"{discounted} discounted, schema matches")
+              f"schema matches")
     return failed
 
 
@@ -223,6 +237,10 @@ def secret_check():
                 failed.append(f"{rel}:{lineno} contains {match[:6]}… — a "
                               f"32-char hex string, the shape of a 2captcha key")
 
+    if scanned == 0:
+        # A scan that read nothing has proved nothing, and must not say "ok".
+        failed.append("the credential scan read 0 files — the exclusions "
+                      "matched the whole repository")
     if not failed:
         print(f"ok       {scanned} files scanned, nothing credential-shaped")
     return failed

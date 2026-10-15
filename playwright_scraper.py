@@ -30,7 +30,7 @@ What is different about BBB
   NOT behind Cloudflare: measured 2026-09-16, HTTP 200 and 57 KB of JSON from
   a datacenter address that gets 403 on every HTML page on the site. Which
   means `--mode search` and `--mode category` need no key and no proxy. Say
-  so plainly rather than selling a product nobody needs here (§13).
+  so plainly rather than selling a product nobody needs here.
 * **A profile page is a different story, and it is the one that needs the
   paid path.** There is no profile endpoint — /api/businessprofile,
   /api/profile, /api/orgs, /api/reviews and /api/complaints all return BBB's
@@ -167,11 +167,15 @@ class PageOutcome:
     # COMPLETE run, exit 0, over a page it never read. On page 1 the same
     # state cost the whole first page of a run that still said complete.
     unreadable: bool = False
+    # True when BBB answered with its own 404: the address does not exist.
+    # Terminal and not a block; its own stop_reason so a reader checks the
+    # URL rather than the proxy or the parser.
+    not_found: bool = False
 
     @property
     def ok(self) -> bool:
         return (not self.load_failed and self.blocked_by is None
-                and not self.unreadable)
+                and not self.unreadable and not self.not_found)
 
     @property
     def failure_reason(self) -> str:
@@ -180,6 +184,8 @@ class PageOutcome:
             return "page_load_timeout"
         if self.unreadable:
             return "unreadable_response"
+        if self.not_found:
+            return "not_found"
         return f"blocked_{self.blocked_by}"
 
 
@@ -277,7 +283,7 @@ def _resolve_category(session, args):
     rather than stored here. Resolution REFUSES when nothing plausibly
     matches instead of taking BBB's first-ranked option: scraping the wrong
     category while reporting success is exactly the silent failure this
-    family exists to avoid (§5, §8).
+    family exists to avoid.
     """
     slug = category_from_url(args.url)
     probe = api_url(country=args.country or "USA",
@@ -631,15 +637,14 @@ def handle_captcha_if_present(page, args, budget=None) -> bool:
     against each other rather than short-circuited, because they can disagree
     about the variant and the parameters for one are rejected for the other.
 
-    NOTE what this cannot help with. BBB's hard refusal is not a page at
-    all — the HTTP/2 stream is reset and nothing arrives — so a 2Captcha key
-    does nothing about the state a blocked run is most likely to meet, and
-    `detect_page_state` reports that as "blocked" rather than "challenge"
-    precisely so no solve is attempted or billed. No challenge has ever been
-    observed on this site. This path exists because a bot manager can be
-    switched on between deploys, and because the family's rule is that
-    detection stays broad:
-    different geos and scenarios surface different challenges.
+    NOTE what this cannot help with. BBB refuses in two shapes, both HTTP
+    403 pages of about 12-15 KB (measured 2026-09-16): a hard "You have been
+    blocked" refusal with no widget on it, and a Managed Challenge ("Just a
+    moment...") that is a real test. A 2Captcha key does nothing about the
+    first, so `detect_page_state` reports it as "blocked" rather than
+    "challenge" precisely so no solve is attempted or billed. Detection
+    stays broad on purpose: different exits and scenarios surface different
+    challenges.
     """
     html = _content_when_settled(page)
     if html is None:
@@ -768,10 +773,15 @@ def _fetch_one_page(session, args, pool, page_num: int, url: str) -> PageOutcome
         logger.info("Fetching page %d/%d: %s", page_num, args.pages, url)
         # Retry a navigation timeout rather than ending the run on it. One
         # network flap on page 12 of 50 should not break the loop.
-        load_failed, exit_failed = False, None
+        load_failed, exit_failed, status = False, None, None
         for attempt in range(1, args.retries + 1):
             try:
-                session.page.goto(url, wait_until="domcontentloaded", timeout=60000)
+                response = session.page.goto(url, wait_until="domcontentloaded",
+                                             timeout=60000)
+                # The HTTP status reaches the classifier: a 404 is a terminal
+                # answer about the address and a marker-less 403 is a block,
+                # and neither can be told from the body alone on every page.
+                status = response.status if response is not None else None
                 load_failed = False
                 break
             except (PWTimeout, PWError) as e:
@@ -805,11 +815,13 @@ def _fetch_one_page(session, args, pool, page_num: int, url: str) -> PageOutcome
 
         if handle_captcha_if_present(session.page, args, budget):
             # A solve navigated the page. Give the destination a moment
-            # before judging what came back.
+            # before judging what came back — and forget the interstitial's
+            # status, which describes a document that is no longer there.
             session.page.wait_for_timeout(1000)
+            status = None
 
         html = _snapshot(session.page, url) or ""
-        state = _classify(session.page, html)
+        state = _classify(session.page, html, status)
 
         # BBB server-renders its data, so a listing is parseable in the
         # FIRST response and there is nothing to wait for on a healthy page.
@@ -837,7 +849,7 @@ def _fetch_one_page(session, args, pool, page_num: int, url: str) -> PageOutcome
                 logger.info("Still nothing after %.0fs (%d match(es) for %s).",
                             wait_timeout / 1000, found, _ready_selector(args))
             html = _snapshot(session.page, url) or html
-            state = _classify(session.page, html)
+            state = _classify(session.page, html, status)
 
         # The paid path is reached only for state "challenge" — BBB's
         # Managed Challenge, which IS a test and can be solved. It is NOT
@@ -850,7 +862,10 @@ def _fetch_one_page(session, args, pool, page_num: int, url: str) -> PageOutcome
             if handle_captcha_if_present(session.page, args, budget):
                 session.page.wait_for_timeout(1000)
                 html = _snapshot(session.page, url) or html
-                state = _classify(session.page, html)
+                # The status was the challenge's; the page after a solve is
+                # judged by what it holds.
+                status = None
+                state = _classify(session.page, html, status)
                 # The VERIFIED outcome, and the only one worth reporting: a
                 # "ready" task result is not evidence the token works. This
                 # line is what says whether the money bought anything.
@@ -906,6 +921,15 @@ def _fetch_one_page(session, args, pool, page_num: int, url: str) -> PageOutcome
 
     outcome.state = state
 
+    if state == "not_found":
+        logger.error("%s does not exist — BBB answered with its own 404 "
+                     "page. Nothing was scraped and nothing was retried: "
+                     "check the URL (a withdrawn profile, or a mistyped "
+                     "path), not the proxy.", url)
+        outcome.not_found = True
+        outcome.final_url = session.page.url
+        return outcome
+
     if state == "blocked":
         # What a caller needs here is WHICH refusal this is, because the two
         # want different answers and only one of them is solvable.
@@ -946,7 +970,7 @@ def _fetch_one_page(session, args, pool, page_num: int, url: str) -> PageOutcome
     # BBB embeds the whole result set in the first response, so there is
     # nothing to wait for and nothing to scroll into view. Porting the
     # sibling repos' scroll loop here would be dead code that looks
-    # load-bearing (CLAUDE.md §4).
+    # load-bearing.
 
     # Dumping on success, not only on failure: a run can return the right
     # NUMBER of rows with a field silently unpopulated, and then the only way
@@ -1490,7 +1514,7 @@ def parse_args():
                         "a search URL already carries find_country and a flag "
                         "that disagreed with it would silently scrape a "
                         "different directory than the one in the address. "
-                        "This is the family's --country ban (CLAUDE.md §10) "
+                        "This is the family's --country ban "
                         "applied where it actually bites: BBB has one host "
                         "for both countries, so the flag cannot contradict a "
                         "HOSTNAME — only a query string, which is what the "
@@ -1534,7 +1558,7 @@ def parse_args():
                         "override it — useful when a run's rows should carry "
                         "the label you searched for rather than each "
                         "business's own primary category.")
-    p.add_argument("--pages", type=int, default=1,
+    p.add_argument("--pages", type=page_flow.at_least(1), default=1,
                    help="Number of listing pages to fetch. Applies to --mode "
                         "search and --mode category; ignored in --mode "
                         "profile. BBB caps every query at 15 pages of 15, and "
@@ -1543,8 +1567,8 @@ def parse_args():
                         "the site states on page 1 and never asks for the "
                         "page that errors. A request for more is honoured up "
                         "to that cap and the sidecar records both numbers.")
-    p.add_argument("--delay", type=float, default=2.0, help="Delay between pages, seconds")
-    p.add_argument("--concurrency", type=int, default=1, metavar="N",
+    p.add_argument("--delay", type=page_flow.at_least(0, float), default=2.0, help="Delay between pages, seconds")
+    p.add_argument("--concurrency", type=page_flow.at_least(1), default=1, metavar="N",
                    help="Fetch pages through N parallel workers (default 1 — "
                         "unchanged sequential behaviour). Each worker runs its "
                         "own browser and holds its own proxy exit, so N>1 "
@@ -1556,7 +1580,7 @@ def parse_args():
                         "that comes back EMPTY is not retried — see "
                         "page_flow.STATE_POLICY — because a query that "
                         "matched nothing is a correct answer, not a fault.")
-    p.add_argument("--retry-delay", type=float, default=2.0,
+    p.add_argument("--retry-delay", type=page_flow.at_least(0, float), default=2.0,
                    help="Seconds before the first page-load retry, doubling "
                         "thereafter (default 2.0)")
     p.add_argument("--format", choices=["json", "csv", "both"], default="both")
@@ -1580,7 +1604,7 @@ def parse_args():
     p.add_argument("--proxy-shuffle", action="store_true",
                    help="Shuffle the pool at startup, so concurrent runs do not "
                         "all begin on the first exit in the file.")
-    p.add_argument("--proxy-block-retries", type=int, default=2,
+    p.add_argument("--proxy-block-retries", type=page_flow.at_least(0), default=2,
                    help="When a page comes back refused (HTTP 403) or behind "
                         "a captcha, retry it from this many OTHER exits before "
                         "giving up (default 2). Needs a pool of more than one; "
@@ -1591,7 +1615,7 @@ def parse_args():
     p.add_argument("--allow-empty", action="store_true",
                    help="Write output files even when 0 rows were found. Off by "
                         "default so a failed run can't overwrite a good result "
-                        "with an empty one; exit code is 4 either way.")
+                        "with an empty one. It does not change the exit code: 4 for a genuinely empty result, 3 if blocked, 5 if nothing was obtained.")
     p.add_argument("--fingerprint", action="store_true",
                    help="Fetch a browser fingerprint from 2captcha's Fingerprint "
                         "API and apply it to the launched browser. Needs "
@@ -1624,13 +1648,10 @@ def parse_args():
                    help="when-blocked (default): only pay to solve a "
                         "reCAPTCHA if the content is not already readable. "
                         "always: solve whenever one is detected. Neither "
-                        "setting touches BBB's hard refusal, which is not a "
-                        "page at all — the HTTP/2 stream is reset and nothing "
-                        "arrives — so no solve helps there and none is "
-                        "attempted or billed. In fact NO challenge has ever "
-                        "been observed on this site; the path is wired up "
-                        "because a bot manager can be switched on between "
-                        "deploys.")
+                        "setting touches BBB's hard refusal, a 403 page with "
+                        "no widget on it, so no solve is attempted or billed "
+                        "there. BBB's Managed Challenge is a Cloudflare "
+                        "Turnstile, which this repo does not implement.")
     p.add_argument("--min-score", type=float, default=0.7,
                    help="reCAPTCHA v3 minimum score to request (0.3, 0.7 or 0.9 "
                         "— the API only accepts these three). Ignored for v2 "
@@ -1651,16 +1672,28 @@ def parse_args():
     args = p.parse_args()
     # Fill --twocaptcha-key / --cdp-endpoint / --proxy / --url from the
     # environment or .env when the flag was not given. An explicit flag wins.
+    # Captured BEFORE the environment fills anything in: after
+    # `env_config.apply` a URL from BBB_URL is indistinguishable from one the
+    # user typed, and the conflict check below then refused --text/--location
+    # for anyone whose .env carried a URL.
+    typed_url = args.url
     env_config.apply(args)
 
     # --url and the query flags are two ways to say the same thing, and only
     # one of them may win. Refused rather than merged: a --country that
     # disagreed with the find_country already in a URL would silently search
     # a different directory than the address names, which is exactly the
-    # hazard CLAUDE.md §10 bans a --country flag for. BBB has one host for
+    # hazard a --country flag is usually refused for. BBB has one host for
     # both countries, so the flag cannot contradict a HOSTNAME — only a query
     # string, and this is where that is caught.
-    if args.url and (args.text or args.location or args.country or args.state):
+    query_flags = bool(args.text or args.location or args.country or args.state)
+    if args.url and not typed_url and query_flags:
+        # The URL came from BBB_URL, not from this command line: it is a
+        # DEFAULT, and the query flags the user typed take its place.
+        logger.info("Ignoring BBB_URL from the environment: the query flags "
+                    "on the command line describe the search instead.")
+        args.url = None
+    if args.url and query_flags:
         conflicting = [name for name, value in
                        (("--text", args.text), ("--location", args.location),
                         ("--country", args.country), ("--state", args.state))
@@ -1688,7 +1721,7 @@ def parse_args():
         # Refused rather than attempted. This parser reads BBB's own state
         # object and BBB's profile-path shape; pointing it at another site
         # would not fail loudly, it would return zero rows and look like an
-        # empty result (§8). The REASON is given, because "is not a BBB site"
+        # empty result. The REASON is given, because "is not a BBB site"
         # about a host that plainly is one sends the reader hunting a typo.
         p.error(f"{args.url!r} {why}.")
 
