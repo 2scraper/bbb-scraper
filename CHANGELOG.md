@@ -10,6 +10,8 @@ When it does, the release notes lead with it.
 
 ## [Unreleased]
 
+## [1.1.0] — 2026-10-15
+
 > **Behaviour change:** `--retries 0` is now a usage error (exit 2). It used
 > to be accepted and made the page-load loop unreachable, so nothing was
 > fetched and the engine reported the browser's own blank page as a result:
@@ -40,6 +42,17 @@ When it does, the release notes lead with it.
 > how many cells differ in `csv_cells_escaped`. Output files are now written
 > through a temporary file and renamed, keeping the mode `open()` would give
 > a new file and the existing mode of a file being replaced.
+
+> **Correction to v1.0.1.** Its README billed the Managed Challenge solve to
+> the wrong product. It read "**Captcha solving** (`--twocaptcha-key`) — for
+> the Managed Challenge only" with a table marking that challenge
+> **solvable**. The challenge is indeed solvable, but not by anything a
+> `--twocaptcha-key` buys here: `captcha_solver.py` builds `RecaptchaV2Task`,
+> `RecaptchaV2TaskProxyless` and `RecaptchaV3TaskProxyless` and no Turnstile
+> task at all. What actually clears it is `Captcha.setAutoSolve` over
+> `--cdp-endpoint`, which is the Scraping Browser API — a separately billed
+> product. A reader following the old README would have set a key, met the
+> challenge anyway, and had no way to tell why.
 
 ### Fixed
 
@@ -153,21 +166,6 @@ When it does, the release notes lead with it.
   listing modes run without an account (profile mode needs a residential
   exit).
 
-## [1.0.2] — 2026-09-16
-
-> **Correction to v1.0.1.** Its README billed the Managed Challenge solve to
-> the wrong product. It read "**Captcha solving** (`--twocaptcha-key`) — for
-> the Managed Challenge only" with a table marking that challenge
-> **solvable**. The challenge is indeed solvable, but not by anything a
-> `--twocaptcha-key` buys here: `captcha_solver.py` builds `RecaptchaV2Task`,
-> `RecaptchaV2TaskProxyless` and `RecaptchaV3TaskProxyless` and no Turnstile
-> task at all. What actually clears it is `Captcha.setAutoSolve` over
-> `--cdp-endpoint`, which is the Scraping Browser API — a separately billed
-> product. A reader following the old README would have set a key, met the
-> challenge anyway, and had no way to tell why.
-
-### Fixed
-
 - **The README now names the product that clears each refusal**, and says in
   those words that **this repo does not implement `TurnstileTaskProxyless`**
   — nor the init script that captures `sitekey`, `action`, `cData` and
@@ -227,6 +225,8 @@ When it does, the release notes lead with it.
   check is narrow — a statement after a `return`/`raise`/`break`/`continue`
   in the SAME block — and across the eighteen repos of this family it found
   six real problems and zero false positives. Verified by control.
+
+[1.1.0]: https://github.com/2scraper/bbb-scraper/releases/tag/v1.1.0
 
 ## [1.0.1] — 2026-09-16
 
