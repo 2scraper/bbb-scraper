@@ -23,14 +23,14 @@ commerce columns even where they are null, because on a shop a null price is
 a fact worth recording. BBB is a business directory, not a shop: it has no
 price, no currency, no discount, no stock and no product brand, and there is
 nothing on the page to measure beside those names. Six columns null on every
-row of every run of every mode is exactly what CLAUDE.md §9 says must not
-exist, so they are not here. `quora-scraper` dropped them for the same
+row of every run of every mode is exactly what this family's schema rule says
+must not exist, so they are not here. `quora-scraper` dropped them for the same
 reason and is the precedent.
 
 What IS kept, byte-identical and in order, is the family prefix — `source`,
 `scraped_at`, `url`, `sku`, `title` — so one column name works across the
 family and a consumer reading several of these repos reads the same first
-five columns in the same order (§9).
+five columns in the same order.
 
 `rating` is absent, and that one is a measurement rather than a definition
 ------------------------------------------------------------------------
@@ -52,14 +52,17 @@ The zero in that column is the trap. An unrated business comes back as
 0.0 means "BBB has not graded this business", NOT "graded worst". Written
 through as 0.0 it would drag every average a consumer computes. `parse_row`
 therefore maps that pair to `rating_grade=None, rating_score=None`, and the
-absence is the honest answer (§8: never present a guess as a fact).
+absence is the honest answer (never present a guess as a fact).
 
 Everything below the dataclass is row-class-agnostic: pass `row_cls` so an
 empty CSV still gets the right header for the mode that produced it.
 """
 
+import contextlib
 import csv
 import json
+import os
+import tempfile
 from dataclasses import dataclass, asdict, field, fields
 from datetime import datetime, timezone
 from typing import Optional, List, Set, Sequence, Any, Type
@@ -200,7 +203,7 @@ class Business:
     # business's officers as individuals ("Mr. Wellington Deleon,
     # President"). BBB publishes them, and republishing a named person's
     # details is a separate act from the site showing them on its own page
-    # (CLAUDE.md §10). A directory of businesses does not need a column of
+    #. A directory of businesses does not need a column of
     # people's names to be useful, so there is not one. Adding it later is a
     # product decision, not an oversight.
     website: Optional[str] = None
@@ -253,7 +256,7 @@ class Business:
     position: Optional[int] = None
     # Which mode produced the row. The repo no longer implies it — three
     # modes share this schema — and `diff_runs.py` refuses to compare two
-    # runs whose modes it cannot line up (§9).
+    # runs whose modes it cannot line up.
     mode: Optional[str] = None
     # WHICH ORDERING BBB was asked for. This belongs on the row rather than
     # only in the sidecar, because it changes which businesses are in the
@@ -266,7 +269,7 @@ class Business:
     #   "api"       BBB's own /api/search JSON — every listing row, whether
     #               an engine read it out of the page or fetched it directly.
     #   "profile"   a rendered profile page.
-    # Provenance in a column, per §8, so `diff_runs.py` can tell a real
+    # Provenance in a column, so `diff_runs.py` can tell a real
     # change from a change of source.
     data_source: Optional[str] = None
 
@@ -334,15 +337,95 @@ LIST_CSV_SEPARATOR = " | "
 def _csv_value(v: Any) -> Any:
     if isinstance(v, (list, tuple)):
         return LIST_CSV_SEPARATOR.join(str(x) for x in v)
+    # A mapping's Python repr is neither readable in a spreadsheet nor
+    # parseable by anything but Python; compact JSON is both.
+    if isinstance(v, dict):
+        return json.dumps(v, ensure_ascii=False, separators=(",", ":"))
     return v
 
 
+@contextlib.contextmanager
+def _atomic(path: str, newline: Optional[str] = None):
+    """Write to a temporary file beside `path`, then rename over it.
+
+    `open(path, "w")` truncates before a single byte is written, so a crash,
+    a kill or a full disk halfway through `json.dump` leaves a SHORTER file
+    where a complete one was: the previous good run is destroyed by the
+    attempt to replace it rather than by its outcome. Measured here before
+    the fix: an interrupted write left `out.json` as 13 bytes of invalid
+    JSON, and an interrupted CSV write left the file without even its header.
+
+    The temporary file goes in the SAME directory on purpose: `os.replace`
+    is only atomic within one filesystem, and a temp file under /tmp can be
+    on another one, where the rename degrades to an interruptible copy.
+    `fsync` before the rename makes the content durable, not merely visible.
+    """
+    directory = os.path.dirname(os.path.abspath(path)) or "."
+    handle = tempfile.NamedTemporaryFile(
+        mode="w", encoding="utf-8", newline=newline, dir=directory,
+        prefix=os.path.basename(path) + ".", suffix=".tmp", delete=False)
+    try:
+        with handle:
+            yield handle
+            handle.flush()
+            os.fsync(handle.fileno())
+        # `NamedTemporaryFile` creates the file 0600 and a rename keeps that
+        # mode, so without this every output would be readable by its owner
+        # alone. An existing target keeps its own mode (someone may have set
+        # it on purpose); a new one gets what `open()` would have given it,
+        # which honours the umask. Never a flat 0644: that narrows 0664
+        # under umask 002.
+        try:
+            mode = os.stat(path).st_mode & 0o777
+        except OSError:
+            umask = os.umask(0)
+            os.umask(umask)
+            mode = 0o666 & ~umask
+        os.chmod(handle.name, mode)
+        os.replace(handle.name, path)
+    except BaseException:
+        try:
+            os.unlink(handle.name)
+        except OSError:
+            pass
+        raise
+
+
+# A spreadsheet treats a cell beginning with one of these as a FORMULA, not
+# as text, and every string in a row here (business names, descriptions,
+# phone lists, addresses) was written by a third party rather than by this
+# code. `=HYPERLINK(...)`, `+cmd|...` and `@SUM(...)` are the classic shapes;
+# a leading tab or newline is stripped by some readers, exposing whatever
+# follows it.
+CSV_FORMULA_LEADS = ("=", "+", "-", "@", "\t", "\r", "\n")
+
+# Prefixed to a cell that would otherwise be read as a formula. Excel, Google
+# Sheets and LibreOffice treat the apostrophe as "the rest is text"; a
+# consumer parsing the CSV with `csv` sees it, which is why the count goes in
+# the sidecar rather than staying silent.
+CSV_FORMULA_ESCAPE = "'"
+
+
+def _csv_escape(v: Any):
+    """Neutralise a formula-shaped cell. Returns (value, was_escaped).
+
+    Only STRINGS are touched: escaping a number would turn a negative
+    longitude into the text `'-97.7` and break every calculation over the
+    column. CSV only — the JSON output keeps the site's bytes as served, and
+    `csv_cells_escaped` in the sidecar declares that the two differ.
+    """
+    if isinstance(v, str) and v.startswith(CSV_FORMULA_LEADS):
+        return CSV_FORMULA_ESCAPE + v, True
+    return v, False
+
+
 def write_json(rows: Sequence[Any], path: str) -> None:
-    with open(path, "w", encoding="utf-8") as f:
+    with _atomic(path) as f:
         json.dump([asdict(r) for r in rows], f, ensure_ascii=False, indent=2)
 
 
-def write_csv(rows: Sequence[Any], path: str, row_cls: Type = Business) -> None:
+def write_csv(rows: Sequence[Any], path: str, row_cls: Type = Business) -> int:
+    """Write the CSV; return how many cells were formula-escaped."""
     # An empty result still gets the header row. A zero-byte file makes a
     # consumer fail on read (no columns to parse) instead of reading a valid
     # table with zero rows — and "an empty result is still a well-formed
@@ -351,11 +434,23 @@ def write_csv(rows: Sequence[Any], path: str, row_cls: Type = Business) -> None:
     # The header comes from `row_cls`, not from the first row, so an empty
     # run still writes the columns of the mode that produced it.
     fieldnames = [f.name for f in fields(row_cls)]
-    with open(path, "w", encoding="utf-8", newline="") as f:
+    escaped = 0
+    # `newline=""` is the csv module's documented requirement and has to
+    # survive the move to a temp file, or every row gains a stray CR on
+    # Windows.
+    with _atomic(path, newline="") as f:
         writer = csv.DictWriter(f, fieldnames=fieldnames)
         writer.writeheader()
         for r in rows:
-            writer.writerow({k: _csv_value(v) for k, v in asdict(r).items()})
+            row = {}
+            for k, v in asdict(r).items():
+                # Escape AFTER `_csv_value`: a list joined into one cell is
+                # text too, and its first element can be formula-shaped.
+                value, was_escaped = _csv_escape(_csv_value(v))
+                row[k] = value
+                escaped += was_escaped
+            writer.writerow(row)
+    return escaped
 
 
 # Exit code used when a run completes but produced nothing. Distinct from 1
@@ -446,7 +541,10 @@ def write_run_meta(out_prefix: str, meta: dict) -> str:
     both complete, and between runs of different `mode`.
     """
     path = f"{out_prefix}.meta.json"
-    with open(path, "w", encoding="utf-8") as f:
+    # Atomic for the same reason as the rows, and more urgently: this is the
+    # file a consumer BRANCHES on, so a truncated sidecar beside good rows
+    # reads as a broken run over data that is fine.
+    with _atomic(path) as f:
         json.dump(meta, f, ensure_ascii=False, indent=2)
     print(f"[+] Wrote run metadata -> {path} (status={meta.get('status')})")
     return path
@@ -510,14 +608,15 @@ def run_meta(status: str, stop_reason: str, pages_requested: int,
     }
     if extra:
         # Merged rather than nested under a key, so a consumer reads
-        # `shop_rating` at the top level beside `products`. Run fields win a
+        # `total_results` at the top level beside `products`. Run fields win a
         # name collision: a caller cannot accidentally overwrite `status`.
         meta.update({k: v for k, v in extra.items() if k not in meta})
     return meta
 
 
 def save(rows: Sequence[Any], out_prefix: str, fmt: str,
-         allow_empty: bool = False, row_cls: Type = Business) -> int:
+         allow_empty: bool = False, row_cls: Type = Business,
+         stats: Optional[dict] = None) -> int:
     """Write JSON/CSV and return a process exit code.
 
     Returns 0 when rows were written, EXIT_NO_PRODUCTS when there were none.
@@ -544,8 +643,17 @@ def save(rows: Sequence[Any], out_prefix: str, fmt: str,
         write_json(rows, f"{out_prefix}.json")
         print(f"[+] Saved {len(rows)} businesses -> {out_prefix}.json")
     if fmt in ("csv", "both"):
-        write_csv(rows, f"{out_prefix}.csv", row_cls=row_cls)
+        escaped = write_csv(rows, f"{out_prefix}.csv", row_cls=row_cls)
         print(f"[+] Saved {len(rows)} businesses -> {out_prefix}.csv")
+        # Reported through `stats` because this function's return IS the
+        # exit code. The caller threads it into the sidecar.
+        if stats is not None:
+            stats["csv_cells_escaped"] = escaped
+        if escaped:
+            print(f"[!] {escaped} CSV cell(s) began with a formula character "
+                  f"and were prefixed with {CSV_FORMULA_ESCAPE!r} so a "
+                  f"spreadsheet reads them as text. The JSON output is "
+                  f"unchanged — see csv_cells_escaped in the sidecar.")
     return 0 if rows else EXIT_NO_PRODUCTS
 
 
@@ -608,8 +716,14 @@ def finish_run(rows: Sequence[Any], out_prefix: str, fmt: str,
     # names has a hole for every name nobody added to it.
     complete = stop_reason in COMPLETE_STOP_REASONS and not pages_failed
     row_cls = ROW_CLASS_BY_MODE.get(mode, Business)
-    rc = save(rows, out_prefix, fmt, allow_empty=allow_empty, row_cls=row_cls)
+    stats: dict = {}
+    rc = save(rows, out_prefix, fmt, allow_empty=allow_empty, row_cls=row_cls,
+              stats=stats)
     wrote_output = bool(rows) or allow_empty
+    if stats:
+        # Housekeeping goes UNDER the caller's `extra`: a name collision must
+        # never drop site data in favour of a count.
+        extra = {**stats, **(extra or {})}
 
     if wrote_output:
         status = "complete" if (rows and complete) else (

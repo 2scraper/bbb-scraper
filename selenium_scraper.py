@@ -139,11 +139,15 @@ class PageOutcome:
     # after every wait and retry. Not a finished page -- see the same field
     # in playwright_scraper.PageOutcome for what it used to cost.
     unreadable: bool = False
+    # True when BBB answered with its own 404: the address does not exist.
+    # Terminal and not a block; its own stop_reason so a reader checks the
+    # URL rather than the proxy or the parser.
+    not_found: bool = False
 
     @property
     def ok(self) -> bool:
         return (not self.load_failed and self.blocked_by is None
-                and not self.unreadable)
+                and not self.unreadable and not self.not_found)
 
     @property
     def failure_reason(self) -> str:
@@ -152,6 +156,8 @@ class PageOutcome:
             return "page_load_timeout"
         if self.unreadable:
             return "unreadable_response"
+        if self.not_found:
+            return "not_found"
         return f"blocked_{self.blocked_by}"
 
 
@@ -597,6 +603,10 @@ def _fetch_one_page(session, args, pool, page_num: int, url: str) -> PageOutcome
             time.sleep(1)
 
         html = _snapshot(session, url) or ""
+        # `driver.get()` returns nothing and WebDriver exposes no HTTP
+        # status, so None is passed on purpose: BBB's 404 is still recognised
+        # by its own title (product_parser.NOT_FOUND_TITLE_RE), which is what
+        # keeps this engine agreeing with its twins about a bad URL.
         state = page_flow.classify(html, None, d["current_url"]())
 
         # BBB server-renders its data, so a listing is parseable in the
@@ -630,7 +640,7 @@ def _fetch_one_page(session, args, pool, page_num: int, url: str) -> PageOutcome
             if handle_captcha_if_present(session, args, budget):
                 time.sleep(1)
                 html = d["content"]() or html
-                state = page_flow.classify(html, url=d["current_url"]())
+                state = page_flow.classify(html, None, d["current_url"]())
                 if state == "content":
                     logger.info("The solve was accepted — page %d is content "
                                 "now.", page_num)
@@ -650,12 +660,25 @@ def _fetch_one_page(session, args, pool, page_num: int, url: str) -> PageOutcome
         # so a different exit is the only thing that plausibly changes the
         # outcome.
         if block_attempt < block_retries:
-            logger.warning("Page %d came back as %s from %s — retrying from "
-                           "another exit (%d/%d).", page_num, state,
-                           mask(pool.current), block_attempt + 1, block_retries)
-            pool.advance(f"{state} on page {page_num}")
-            session.relaunch()
-            d = _driver(session)
+            if has_pool:
+                logger.warning("Page %d came back as %s from %s — retrying "
+                               "from another exit (%d/%d).", page_num, state,
+                               mask(pool.current), block_attempt + 1,
+                               block_retries)
+                pool.advance(f"{state} on page {page_num}")
+                session.relaunch()
+                d = _driver(session)
+            else:
+                # No pool, so nowhere else to go — re-fetch through the same
+                # access path, as the Playwright engine does. Without this
+                # guard `pool.current` on None crashed the run (exit 1) and
+                # lost every row gathered on earlier pages.
+                pause = args.retry_delay * (block_attempt + 1)
+                logger.warning("Page %d came back as %s — re-fetching through "
+                               "the same access path in %.1fs (%d/%d).",
+                               page_num, state, pause, block_attempt + 1,
+                               block_retries)
+                time.sleep(pause)
 
     if load_failed:
         logger.error("Gave up loading %s after %d attempt(s).", url, args.retries)
@@ -663,6 +686,15 @@ def _fetch_one_page(session, args, pool, page_num: int, url: str) -> PageOutcome
         return outcome
 
     outcome.state = state
+
+    if state == "not_found":
+        logger.error("%s does not exist — BBB answered with its own 404 "
+                     "page. Nothing was scraped and nothing was retried: "
+                     "check the URL (a withdrawn profile, or a mistyped "
+                     "path), not the proxy.", url)
+        outcome.not_found = True
+        outcome.final_url = d["current_url"]()
+        return outcome
 
     if state == "blocked":
         # BBB refuses in TWO shapes and only one is solvable — see
@@ -1011,20 +1043,20 @@ def parse_args():
     p.add_argument("--category", default=None,
                    help="Label to tag output rows with. Defaults to BBB's own "
                         "category for each business.")
-    p.add_argument("--pages", type=int, default=1,
+    p.add_argument("--pages", type=page_flow.at_least(1), default=1,
                    help="Listing pages to fetch. BBB caps every query at 15 "
                         "pages of 15 and answers page 16 with HTTP 500, so a "
                         "run plans against the totalPages the site states on "
                         "page 1.")
-    p.add_argument("--delay", type=float, default=2.0, help="Delay between pages, seconds")
-    p.add_argument("--concurrency", type=int, default=1, metavar="N",
+    p.add_argument("--delay", type=page_flow.at_least(0, float), default=2.0, help="Delay between pages, seconds")
+    p.add_argument("--concurrency", type=page_flow.at_least(1), default=1, metavar="N",
                    help="Accepted for flag parity and IGNORED here: parallel "
                         "page fetching lives in playwright_scraper.py.")
     p.add_argument("--retries", type=page_flow.attempts, default=3,
                    help="Attempts per page load before giving up (default 3). "
                         "A page that comes back EMPTY is not retried: a query "
                         "that matched nothing is a correct answer, not a fault.")
-    p.add_argument("--retry-delay", type=float, default=2.0,
+    p.add_argument("--retry-delay", type=page_flow.at_least(0, float), default=2.0,
                    help="Seconds before the first retry, doubling thereafter")
     p.add_argument("--format", choices=["json", "csv", "both"], default="both")
     p.add_argument("--out", default="bbb_businesses", help="Output file prefix")
@@ -1042,7 +1074,7 @@ def parse_args():
                         "Wins over --proxy.")
     p.add_argument("--proxy-rotate", choices=list(ROTATE_MODES), default="per-run")
     p.add_argument("--proxy-shuffle", action="store_true")
-    p.add_argument("--proxy-block-retries", type=int, default=2)
+    p.add_argument("--proxy-block-retries", type=page_flow.at_least(0), default=2)
     p.add_argument("--twocaptcha-key", default=None, help="2captcha.com API key")
     p.add_argument("--allow-empty", action="store_true",
                    help="Write output files even when 0 rows were found.")
@@ -1071,11 +1103,11 @@ def parse_args():
                    default="when-blocked",
                    help="when-blocked (default): only pay to solve a "
                         "reCAPTCHA if the content is not already readable. "
-                        "always: solve whenever one is detected. Note that "
-                        "NO challenge has ever been observed on this site — a "
-                        "refused request gets no page at all — so neither "
-                        "setting has anything to act on today, and neither "
-                        "helps with a refusal.")
+                        "always: solve whenever one is detected. Neither "
+                        "setting touches BBB's hard refusal, a 403 page with "
+                        "no widget on it, so no solve is attempted or billed "
+                        "there. BBB's Managed Challenge is a Cloudflare "
+                        "Turnstile, which this repo does not implement.")
     p.add_argument("--min-score", type=float, default=0.7)
     p.add_argument("--cdp-endpoint", default=None,
                    help="Attach to a running browser at host:port. Must NOT "
@@ -1088,11 +1120,23 @@ def parse_args():
     p.add_argument("--headless", action="store_true", default=True)
     p.add_argument("--headful", dest="headless", action="store_false")
     args = p.parse_args()
+    # Captured BEFORE the environment fills anything in: after
+    # `env_config.apply` a URL from BBB_URL is indistinguishable from one the
+    # user typed, and the conflict check below then refused --text/--location
+    # for anyone whose .env carried a URL.
+    typed_url = args.url
     env_config.apply(args)
 
     # Spelled identically to playwright_scraper: --url and the query flags are
     # two ways to say the same thing, and only one may win.
-    if args.url and (args.text or args.location or args.country or args.state):
+    query_flags = bool(args.text or args.location or args.country or args.state)
+    if args.url and not typed_url and query_flags:
+        # The URL came from BBB_URL, not from this command line: it is a
+        # DEFAULT, and the query flags the user typed take its place.
+        logger.info("Ignoring BBB_URL from the environment: the query flags "
+                    "on the command line describe the search instead.")
+        args.url = None
+    if args.url and query_flags:
         conflicting = [name for name, value in
                        (("--text", args.text), ("--location", args.location),
                         ("--country", args.country), ("--state", args.state))

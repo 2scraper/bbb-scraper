@@ -24,7 +24,52 @@ When it does, the release notes lead with it.
 > in `pages_failed` with `stop_reason: "unreadable_response"`. A pipeline
 > that branched on exit 0 was reading an unread page as the end of a listing.
 
+> **Behaviour change:** a URL BBB answers with its own 404 page now stops at
+> once with `stop_reason: "not_found"` (exit 5 when nothing was gathered).
+> It used to wait 30 s, re-fetch, and end as `unreadable_response`.
+
+> **Behaviour change:** negative values for `--pages`, `--delay`,
+> `--retry-delay`, `--proxy-block-retries` and `--concurrency` (and 0 for
+> `--pages` and `--concurrency`) are now usage errors (exit 2) in every
+> engine, and so is a negative `--retries`/`--retry-delay` in
+> `scraper_api_client.py`.
+
+> **Behaviour change:** CSV cells that begin with `=`, `+`, `-`, `@`, a tab
+> or a line break are now prefixed with an apostrophe so a spreadsheet does
+> not run them as formulas. The JSON output is unchanged; the sidecar says
+> how many cells differ in `csv_cells_escaped`. Output files are now written
+> through a temporary file and renamed, keeping the mode `open()` would give
+> a new file and the existing mode of a file being replaced.
+
 ### Fixed
+
+- **The Selenium and pyppeteer engines crashed on a block with no proxy.**
+  With no `--proxy`, a blocked page (and, in pyppeteer, a dead exit) reached
+  `pool.current`/`pool.advance` on None: a traceback, exit 1, and every row
+  from earlier pages lost. Both now re-fetch on the same path, as the
+  Playwright engine always did, and report exit 3.
+- **An interrupted write destroyed the previous good output.** `out.json`,
+  `out.csv` and `out.meta.json` were truncated before being written, so a
+  failure halfway left a short or empty file. They are now written to a
+  temporary file beside the target, synced and renamed over it.
+- **The HTTP status never reached the classifier.** Playwright and
+  pyppeteer now pass the response status, so BBB's 404 is terminal and a
+  marker-less 403 is a block. Selenium has no status to pass; BBB's own 404
+  title is recognised in the body for it.
+- **A `BBB_URL` from `.env` blocked `--text`/`--location`.** A URL from the
+  environment is now a default that the query flags replace; a TYPED
+  `--url` with query flags is still refused. `.env.example` ships `BBB_URL`
+  commented out.
+- **The credential scan judged exclusions on the absolute path**, so a
+  clone under a directory named `venv` scanned 0 files and reported clean.
+  Exclusions are now relative to the repository, a scan of 0 files fails,
+  and `.env*` copies plus `.json`, `.csv` and `.html` files are read too.
+- **Dump and capture files were not ignored**: `X.page3` from
+  `--dump-html`, a raw `.html` at the repository root, and `live/`,
+  `out/`-style working directories.
+- `--solve-captcha` help, a docstring and the README's exit-code table
+  described refusals and exit 5 inaccurately; corrected. Comments no longer
+  point at documents a reader of this repository cannot open.
 
 - **`--retries 0` fetched nothing and called it a result.** The load loop is
   `range(1, retries + 1)`, so 0 never runs it and the engine judged

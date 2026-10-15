@@ -240,7 +240,7 @@ Nothing here integrates a competitor.
 | 2 | bad usage |
 | 3 | blocked — Cloudflare, distinct from an empty result |
 | 4 | zero businesses — the query matched nothing |
-| 5 | remote API error (the Scraping Browser or Scraper API) |
+| 5 | nothing was obtained — a remote API error (the Scraping Browser or Scraper API), a navigation timeout, a dead proxy, a page that could not be read, or a URL BBB answers with its own 404 |
 | 6 | partial — some pages came back and some did not |
 
 **A run that finds nothing writes nothing**, so a failure never replaces last

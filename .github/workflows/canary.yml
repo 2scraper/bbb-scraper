@@ -13,8 +13,7 @@
 #
 # The PROFILE path is different — it fetches a Cloudflare-gated page — so that
 # half is guarded on a secret and SKIPS with a ::notice:: when the secret is
-# absent. A check that is always red teaches everyone to ignore checks
-# (CLAUDE.md §11).
+# absent. A check that is always red teaches everyone to ignore checks.
 #
 #     gh secret set BBB_CDP_ENDPOINT --repo 2scraper/bbb-scraper
 #
@@ -52,7 +51,7 @@ jobs:
 
       # >= 3 pages, because with one page pagination is never exercised —
       # which is exactly how a silent single-page bug survived in a sibling
-      # repo (§11).
+      # repo.
       - name: Run
         id: run
         run: |
@@ -207,7 +206,7 @@ jobs:
           # Through the ENVIRONMENT, not a --flag: env_config.py already reads
           # exactly this name, an unset secret arrives as an empty string
           # which the loader treats as unset, and the credential never reaches
-          # a command line (§3, §11).
+          # a command line.
           BBB_CDP_ENDPOINT: ${{ secrets.BBB_CDP_ENDPOINT }}
         run: |
           set +e

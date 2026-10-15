@@ -65,7 +65,7 @@ from output_writer import UNIQUE_BY_SKU_MODES
 # What is worth watching on a business directory, and nothing else.
 #
 # A price monitor's fields are absent because BBB has no prices — porting
-# them would be dead code that looks load-bearing (CLAUDE.md §4). What
+# them would be dead code that looks load-bearing. What
 # changes here is a business's STANDING and its CONTACT DETAILS, and those
 # are the two things anyone diffs a directory for.
 #
@@ -96,7 +96,7 @@ TRACKED_FIELDS = (
 # against a profile run would report each of them as a change on every row —
 # and none of it would be about the business. When the two rows disagree on
 # `data_source`, those fields are reported separately as `source_changed`
-# rather than as changes, which is this family's rule (§8: a difference that
+# rather than as changes, which is this family's rule (a difference that
 # comes with a provenance difference says something about our own two
 # snapshots, not about the site).
 PROFILE_ONLY_FIELDS = (

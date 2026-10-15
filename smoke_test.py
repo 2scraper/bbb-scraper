@@ -3,7 +3,7 @@
 smoke_test.py — the offline suite for bbb-scraper.
 
 One file of plain functions with inline fixtures. No pytest, no conftest, no
-fixtures directory (CLAUDE.md §10); `tests/test_smoke.py` wraps this as a
+fixtures directory; `tests/test_smoke.py` wraps this as a
 single pytest test so `pytest` works as an entry point without a second copy
 of the checks.
 
@@ -21,7 +21,7 @@ the fields the parser reads. One field is NOT verbatim: BBB's profile object
 names the business's officers as individuals, and those names are replaced
 with REDACTED placeholders. The parser deliberately reads no such column;
 republishing a named person is a separate act from the site showing them on
-its own page (§10). Everything BBB generates around them is untouched, and
+its own page. Everything BBB generates around them is untouched, and
 `check_fixtures_carry_no_personal_names` guards the SHAPE so a future capture
 is caught too.
 """
@@ -90,7 +90,7 @@ SERVED_VIA_SCRAPING_BROWSER_HTML = "<html><head><title>Search results for Restau
 # ---------------------------------------------------------------------------
 # The parser, asserted on VALUES rather than on coverage
 # ---------------------------------------------------------------------------
-# A column can be 100% populated and entirely wrong (CLAUDE.md §10), so every
+# A column can be 100% populated and entirely wrong, so every
 # check below pins a figure from the real capture rather than counting
 # non-nulls.
 
@@ -324,7 +324,7 @@ def check_profile_publishes_no_personal_names():
     """The parser must not lift BBB's named officers into a column.
 
     BBB publishes them; republishing a named person is a separate act from
-    the site showing them on its own page (§10). This asserts the CURRENT
+    the site showing them on its own page. This asserts the CURRENT
     behaviour so that adding such a column becomes a decision rather than an
     accident.
     """
@@ -524,8 +524,11 @@ def check_page_states_on_real_captures():
           P.detect_page_state(CHALLENGE_HTML, 403), "challenge")
     equal("the hard refusal is BLOCKED",
           P.detect_page_state(HARD_BLOCK_HTML, 403), "blocked")
-    equal("a page BBB served but that is not a listing is UNKNOWN",
-          P.detect_page_state(SERVED_404_HTML, 404), "unknown")
+    # This used to pin "unknown", which defended a gap: a mistyped or
+    # withdrawn profile URL then waited 30 s, re-fetched, and ended as an
+    # unreadable page instead of saying the address does not exist.
+    equal("BBB's own 404 is NOT_FOUND",
+          P.detect_page_state(SERVED_404_HTML, 404), "not_found")
     equal("the listing payload is CONTENT",
           P.detect_page_state(LISTING_PAYLOAD_JSON, 200), "content")
     equal("a profile page is CONTENT too",
@@ -537,7 +540,7 @@ def check_page_states_on_real_captures():
 
 
 def check_markers_do_not_match_a_page_bbb_serves():
-    """CLAUDE.md §18: a marker that matches every page is WORSE than none.
+    """A marker that matches every page is WORSE than none.
 
     This check was once passing for the WRONG REASON, and that is why it now
     runs against two different kinds of served page.
@@ -585,7 +588,7 @@ def check_markers_do_not_match_a_page_bbb_serves():
 
     # Every marker must fire on at least one real refusal, or it is dead
     # weight. `/turnstile/v0/api.js` was in this list and matched nothing at
-    # all across every capture (§17).
+    # all across every capture.
     for marker in P.BOT_CHALLENGE_MARKERS:
         check("marker %r fires on a real challenge" % marker,
               marker in CHALLENGE_HTML,
@@ -599,7 +602,7 @@ def check_markers_do_not_match_a_page_bbb_serves():
 
 def check_positive_asset_detection():
     """A page BBB served is built out of BBB's own assets; an interstitial is
-    not. §8's assets.mmsrg.com trick, on a third site."""
+    not. The assets.mmsrg.com trick, on a third site."""
     import product_parser as P
     check("the served page references BBB's asset hosts",
           P.references_own_assets(SERVED_404_HTML) >= 2)
@@ -615,7 +618,7 @@ def check_state_policy():
     import page_flow
     equal("every state has a policy",
           sorted(page_flow.STATE_POLICY),
-          ["blocked", "challenge", "content", "empty", "unknown"])
+          ["blocked", "challenge", "content", "empty", "not_found", "unknown"])
     check("content: parsed, not retried, not blocked",
           page_flow.should_parse("content")
           and not page_flow.should_retry("content")
@@ -639,7 +642,7 @@ def check_state_policy():
 
 
 def check_policy_constants_have_a_consumer():
-    """§17: a policy constant nothing reads is the same defect as dead code.
+    """A policy constant nothing reads is the same defect as dead code.
 
     `RETRY_ON_BLOCKED` carried a paragraph of justification in a sibling repo
     and no engine consulted it, so setting it False changed nothing.
@@ -673,7 +676,7 @@ def check_policy_constants_have_a_consumer():
 def check_row_schema():
     from output_writer import Business, ROW_CLASS_BY_MODE, UNIQUE_BY_SKU_MODES
     names = [f.name for f in fields(Business)]
-    equal("the family prefix is byte-identical and in order (§9)",
+    equal("the family prefix is byte-identical and in order",
           names[:5], ["source", "scraped_at", "url", "sku", "title"])
     for gone in ("price", "currency", "original_price", "discount_pct",
                  "in_stock", "brand"):
@@ -756,7 +759,7 @@ def check_a_run_that_finds_nothing_writes_nothing():
         code = save([], prefix, "json", allow_empty=True)
         equal("--allow-empty WRITES the empty file...", 
               json.load(open(prefix + ".json", encoding="utf-8")), [])
-        # ...and still reports exit 4. Pinned deliberately (§10: pin a known
+        # ...and still reports exit 4. Pinned deliberately (pin a known
         # behaviour rather than half-guarding it): "zero businesses" is true
         # whether or not the file was written, and a caller that wanted the
         # file still wants to know the result was empty.
@@ -795,7 +798,7 @@ def check_sidecar_shape():
 
 
 # ---------------------------------------------------------------------------
-# The engines — the five checks CLAUDE.md §17 says to steal
+# The engines — five checks worth carrying to every repo
 # ---------------------------------------------------------------------------
 
 ENGINES = ("playwright_scraper", "selenium_scraper", "puppeteer_scraper")
@@ -842,7 +845,7 @@ def check_engines_import_their_driver_at_module_level():
 
 
 def check_shared_calls_bind_against_the_real_signature():
-    """§17's check #1, and the one that earns its keep.
+    """Signature binding, and the one that earns its keep.
 
     A sibling repo shipped `classify(html, url=…)` in two of three engines
     against a callee taking `status` second, and BOTH crashed on their first
@@ -958,7 +961,7 @@ def _argparse_flags(module_name):
     return flags
 
 
-# The family's flag contract (CLAUDE.md §9), plus this repo's own additions.
+# The family's flag contract, plus this repo's own additions.
 CONTRACT_FLAGS = {
     "--url", "--pages", "--category", "--format", "--out", "--delay",
     "--retries", "--retry-delay", "--concurrency", "--proxy", "--proxy-file",
@@ -971,7 +974,7 @@ BBB_FLAGS = {"--mode", "--text", "--location", "--country", "--sort", "--state",
 
 
 def check_engine_flag_sets():
-    """§17's check #2: against the contract AND against each other, both ways.
+    """Flag parity: against the contract AND against each other, both ways.
 
     A missing flag fails; so does closing a difference the README documents.
     """
@@ -988,7 +991,7 @@ def check_engine_flag_sets():
     # and could not launch it on the development machine, so it needs a way
     # to point at another one. Its twins have no equivalent because they do
     # not ship a browser. Listed here so that closing the difference — or
-    # growing a second one — fails the build (§17).
+    # growing a second one — fails the build.
     DOCUMENTED_DIFFERENCES = {"puppeteer_scraper": {"--chromium-path"}}
     names = sorted(sets)
     for i in range(len(names) - 1):
@@ -1009,7 +1012,7 @@ def check_banned_and_removed_flags():
 
     `--country` is legitimate here and NOT banned — BBB serves both its
     countries from one host, so the flag cannot contradict a hostname the way
-    CLAUDE.md §10's rule is about. What the rule is really about is a flag
+    the removed-flag rule is about. What the rule is really about is a flag
     disagreeing with the URL, and that is enforced instead: passing --country
     together with --url is refused, which the next check asserts.
     """
@@ -1027,7 +1030,7 @@ def check_banned_and_removed_flags():
 
 
 def check_undefined_names_in_every_module():
-    """§10: compileall proves a file PARSES, not that its names RESOLVE.
+    """compileall proves a file PARSES, not that its names RESOLVE.
 
     A live run of a sibling repo's pyppeteer engine died with NameError on a
     line reached only while fetching, after an import had been removed — the
@@ -1085,7 +1088,7 @@ def _import_graph(entrypoint):
 
 
 def check_dockerfile_copies_everything_the_entrypoint_imports():
-    """§10: all three repos in this family shipped an image that died with
+    """All three repos in this family shipped an image that died with
     ModuleNotFoundError on every invocation, --help included, because
     proxy_pool.py was missing from the COPY list. CI never built the image;
     this check needs no Docker."""
@@ -1133,7 +1136,7 @@ def check_env_example_documents_exactly_what_the_loader_reads():
 
 
 def check_a_copied_env_example_reads_as_UNSET():
-    """§17: `cp .env.example .env` followed by a run must not connect.
+    """`cp .env.example .env` followed by a run must not connect.
 
     The placeholder check was a literal set in a sibling repo, and the two
     credentialled URLs are documented the way the vendor documents them —
@@ -1147,15 +1150,15 @@ def check_a_copied_env_example_reads_as_UNSET():
         check(".env.example exists", False)
         return
     text = open(example, encoding="utf-8").read()
-    values = dict(re.findall(r"^([A-Z][A-Z0-9_]+)=(.*)$", text, re.M))
-    check("the example actually sets every variable",
+    # BBB_URL is shipped COMMENTED OUT (a copied example must not become a
+    # default nobody chose), so a commented assignment counts as documented.
+    values = dict(re.findall(r"^#?\s*([A-Z][A-Z0-9_]+)=(.*)$", text, re.M))
+    check("the example shows a value for every variable",
           set(values) == set(env_config.ENV_KEYS),
           "example has %s, loader reads %s"
           % (sorted(values), sorted(env_config.ENV_KEYS)))
-    # Every CREDENTIAL must read as unset. The default TARGET must not: it is
-    # a real, usable URL, and blanking it would remove the one setting this
-    # file exists to make convenient (§17's check #3 says exactly this — the
-    # credentials unset, the non-credential default still usable).
+    # Every CREDENTIAL must read as unset. The example TARGET must not: it is
+    # a real, usable URL for anyone who uncomments it.
     CREDENTIALS = {"TWOCAPTCHA_KEY", "BBB_CDP_ENDPOINT", "BBB_PROXY"}
     before = dict(os.environ)
     try:
@@ -1186,7 +1189,7 @@ def check_a_copied_env_example_reads_as_UNSET():
 
 
 def check_credential_scan_is_one_implementation_invoked_from_both():
-    """§17: two sources of truth, one dead and one holed.
+    """Two sources of truth, one dead and one holed.
 
     `.github/ci_checks.py` sat in three repos invoked by NOTHING, while
     tests.yml carried an inline grep doing a narrower version of the same job
@@ -1216,7 +1219,7 @@ BANNED_WORDING = (
 
 
 def check_banned_wording():
-    """§12: enforced by this test rather than by review."""
+    """Banned wording, enforced by this test rather than by review."""
     for root, dirs, files in os.walk(HERE):
         dirs[:] = [d for d in dirs if d not in
                    (".git", "__pycache__", ".pytest_cache", "node_modules")]
@@ -1234,7 +1237,7 @@ def check_banned_wording():
 
 
 def check_concurrency_with_the_browser_stubbed():
-    """§10: a live run cannot always reach this machinery.
+    """A live run cannot always reach this machinery.
 
     Page 1 is fetched alone and decides how many pages there are, so a
     blocked page 1 means the workers never start. Driven directly instead,
@@ -1380,7 +1383,7 @@ def check_worker_pools_start_on_different_exits():
 
 
 def check_fingerprint_kwargs_are_ones_the_driver_accepts():
-    """§10: an unknown key in new_context(**kwargs) is a TypeError at launch,
+    """An unknown key in new_context(**kwargs) is a TypeError at launch,
     on the PAID path, at runtime."""
     engine = _import_engine("playwright_scraper")
     if engine is None:
@@ -1428,7 +1431,7 @@ def check_every_engine_exposes_the_same_public_surface():
 
 
 def check_engines_do_not_evaluate_a_string_in_the_browser():
-    """§18: a site whose CSP omits `unsafe-eval` kills wait_for_function with
+    """A site whose CSP omits `unsafe-eval` kills wait_for_function with
     an EvalError and takes the run down with exit 1. BBB has not been
     measured for that, and the cheap habit costs nothing where it would have
     been allowed."""
@@ -1446,7 +1449,7 @@ def check_engines_do_not_evaluate_a_string_in_the_browser():
 
 
 def check_credentials_never_reach_a_log():
-    """§8: an EXCEPTION MESSAGE is a log, and the masker must be GLOBAL.
+    """An EXCEPTION MESSAGE is a log, and the masker must be GLOBAL.
 
     A Playwright connection error repeats the endpoint five times (the
     message plus a four-line call log), so a masker handling only the first
@@ -1492,7 +1495,7 @@ def check_sample_output_matches_the_schema():
 
 
 def check_readme_numbers_are_not_stale():
-    """§17's check #4: diff every numeric claim against what is on disk.
+    """Diff every numeric claim against what is on disk.
 
     Only the figures that MUST hold are pinned: a number that legitimately
     varies between runs is written as a range in the README and not checked
@@ -1530,7 +1533,7 @@ def _tree_state():
 
 
 def check_no_test_mutates_the_working_tree():
-    """§10: one suite used its own file as a fake chromedriver and chmod'd it
+    """One suite used its own file as a fake chromedriver and chmod'd it
     to 755, leaving a mode change in git status.
 
     Compares the tree against how it looked when the suite STARTED, not
@@ -1548,7 +1551,7 @@ def check_no_test_mutates_the_working_tree():
 
 
 def check_captcha_capability_claims_match_the_code():
-    """§19: the most expensive bug this family can ship is a SENTENCE.
+    """The most expensive bug this family can ship is a SENTENCE.
 
     It fails in both directions and this family has shipped both:
 
@@ -1857,7 +1860,7 @@ def check_an_unreadable_page_is_not_the_end_of_the_listing():
 
 
 def check_the_solve_budget_is_spent_at_the_purchase():
-    """Audit 2026-10-08, P2 (and §27.4): three solves against a limit of one.
+    """Audit 2026-10-08, P2: three solves against a limit of one.
 
     `handle_captcha_if_present` runs before classification AND after it, and
     only the second call was counted. Counting calls was also the wrong fix:
@@ -1875,7 +1878,7 @@ def check_the_solve_budget_is_spent_at_the_purchase():
     # Every engine: the solver call is behind the budget, the call sites pass
     # it, and the old per-call counter is gone. Read from source on purpose:
     # a check gated behind importing the engine skips for exactly the engines
-    # whose driver is absent (§27.4).
+    # whose driver is absent.
     for module in ("playwright_scraper", "selenium_scraper", "puppeteer_scraper"):
         tree = ast.parse(open(os.path.join(HERE, module + ".py"),
                               encoding="utf-8").read())
@@ -2099,6 +2102,573 @@ def _retries_validation_problems():
 def check_retries_is_validated_in_every_entry_point():
     problems = _retries_validation_problems()
     check("--retries is validated in every entry point, so 0 is a usage error", not problems, "; ".join(problems))
+
+
+# ---------------------------------------------------------------------------
+# Audit 2026-10-14: writes, CSV cells, no-proxy retries, 404s, typed URLs
+# ---------------------------------------------------------------------------
+
+def check_a_failed_write_keeps_the_previous_good_output():
+    """An interrupted write must not destroy the last good file.
+
+    `open(path, "w")` truncates first, so a failure halfway through
+    `json.dump` used to leave 13 bytes of invalid JSON where a good result
+    was, and a failed CSV write left no header at all.
+    """
+    import output_writer as O
+    from output_writer import Business
+    good = [Business(sku="good-1", title="Good")]
+    with tempfile.TemporaryDirectory() as tmp:
+        prefix = os.path.join(tmp, "out")
+        O.save(good, prefix, "both")
+        O.write_run_meta(prefix, {"status": "complete"})
+        before = {ext: open(prefix + ext, "rb").read()
+                  for ext in (".json", ".csv", ".meta.json")}
+
+        class Boom(Exception):
+            pass
+
+        def explode(*a, **k):
+            raise Boom("disk full")
+
+        saved_dump, saved_writerow = O.json.dump, O.csv.DictWriter.writerow
+        try:
+            O.json.dump = lambda obj, f, **k: (f.write('[{"partial": '), explode())
+            for ext, call in ((".json", lambda: O.write_json(good, prefix + ".json")),
+                              (".meta.json", lambda: O.write_run_meta(
+                                  prefix, {"status": "failed"}))):
+                try:
+                    call()
+                except Boom:
+                    pass
+                equal("a failed %s write leaves the previous file intact" % ext,
+                      open(prefix + ext, "rb").read(), before[ext])
+            O.json.dump = saved_dump
+            O.csv.DictWriter.writerow = explode
+            try:
+                O.write_csv(good, prefix + ".csv")
+            except Boom:
+                pass
+            equal("a failed .csv write leaves the previous file intact",
+                  open(prefix + ".csv", "rb").read(), before[".csv"])
+        finally:
+            O.json.dump = saved_dump
+            O.csv.DictWriter.writerow = saved_writerow
+        equal("no temporary file is left behind",
+              sorted(n for n in os.listdir(tmp) if n.endswith(".tmp")), [])
+
+
+def check_output_files_get_the_mode_open_would_have_given_them():
+    """A temp file is created 0600 and a rename keeps that. A new output must
+    get `0o666 & ~umask` (what `open()` gives it); an existing one keeps its
+    own mode. A flat 0644 would narrow 0664 under umask 002."""
+    if os.name != "posix":
+        skip("output file modes", "not a POSIX system")
+        return
+    import output_writer as O
+    from output_writer import Business
+    rows = [Business(sku="m-1", title="Mode")]
+    with tempfile.TemporaryDirectory() as tmp:
+        for umask in (0o022, 0o002, 0o077):
+            old = os.umask(umask)
+            try:
+                path = os.path.join(tmp, "new_%03o.json" % umask)
+                O.write_json(rows, path)
+                mode = os.stat(path).st_mode & 0o777
+            finally:
+                os.umask(old)
+            equal("a new file under umask %03o is %03o" % (umask, 0o666 & ~umask),
+                  "%03o" % mode, "%03o" % (0o666 & ~umask))
+        path = os.path.join(tmp, "existing.csv")
+        open(path, "w").close()
+        os.chmod(path, 0o640)
+        O.write_csv(rows, path)
+        equal("an existing file keeps its own mode",
+              "%03o" % (os.stat(path).st_mode & 0o777), "640")
+
+
+def check_csv_cells_that_a_spreadsheet_would_execute_are_escaped():
+    import output_writer as O
+    from output_writer import Business
+    row = Business(sku="f-1", title='=HYPERLINK("http://x","y")',
+                   phone=["=1+1", "+1 555"], description="@SUM(A1)",
+                   longitude=-97.7)
+    clean = Business(sku="f-2", title="Plain name", description="-")
+    with tempfile.TemporaryDirectory() as tmp:
+        prefix = os.path.join(tmp, "out")
+        code = O.finish_run([row, clean], prefix, "both", False, blocked=False,
+                            stop_reason="completed", pages_requested=1,
+                            pages_completed=1, start_url="u", final_url="u",
+                            extra={"csv_cells_escaped": "site-data"})
+        equal("a run with formula-shaped cells still exits 0", code, 0)
+        with open(prefix + ".csv", encoding="utf-8", newline="") as f:
+            cells = list(csv.DictReader(f))
+        equal("a formula title is prefixed with an apostrophe",
+              cells[0]["title"], '\'=HYPERLINK("http://x","y")')
+        equal("a joined list is escaped AFTER joining", cells[0]["phone"],
+              "'=1+1 | +1 555")
+        equal("an @ cell is escaped", cells[0]["description"], "'@SUM(A1)")
+        equal("a NUMBER stays a number, negative or not", cells[0]["longitude"],
+              "-97.7")
+        equal("a lone dash is text and is escaped too", cells[1]["description"],
+              "'-")
+        equal("a plain cell is untouched", cells[1]["title"], "Plain name")
+        loaded = json.load(open(prefix + ".json", encoding="utf-8"))
+        equal("JSON keeps the site's bytes", loaded[0]["title"],
+              '=HYPERLINK("http://x","y")')
+        meta = json.load(open(prefix + ".meta.json", encoding="utf-8"))
+        equal("the caller's own extra wins a name collision",
+              meta["csv_cells_escaped"], "site-data")
+        O.finish_run([row], prefix, "csv", False, blocked=False,
+                     stop_reason="completed", pages_requested=1,
+                     pages_completed=1, start_url="u", final_url="u")
+        meta = json.load(open(prefix + ".meta.json", encoding="utf-8"))
+        equal("the sidecar counts the escaped cells", meta.get("csv_cells_escaped"), 3)
+
+
+def _engine_with_stub_driver(name):
+    """Load an engine with its driver library replaced by stand-ins.
+
+    So the retry paths below run in every venv, including the core-only one
+    CI's offline job uses, rather than skipping for exactly the engines whose
+    driver is absent. Loaded under a private module name and with sys.modules
+    restored afterwards, so the import-skip checks elsewhere see the real
+    state of the environment.
+    """
+    import importlib.util
+    import types
+
+    class Stub(types.ModuleType):
+        def __getattr__(self, attr):
+            if attr.startswith("__"):
+                raise AttributeError(attr)
+            value = type(attr, (Exception,), {})
+            setattr(self, attr, value)
+            return value
+
+    stubbed = ("playwright", "playwright.sync_api", "pyppeteer", "selenium",
+               "selenium.webdriver", "selenium.common",
+               "selenium.common.exceptions", "selenium.webdriver.chrome",
+               "selenium.webdriver.chrome.options",
+               "selenium.webdriver.common", "selenium.webdriver.common.by",
+               "selenium.webdriver.support", "selenium.webdriver.support.ui",
+               "webdriver_manager", "webdriver_manager.chrome")
+    saved = {m: sys.modules.get(m) for m in stubbed}
+    try:
+        for m in stubbed:
+            sys.modules[m] = Stub(m)
+        spec = importlib.util.spec_from_file_location(
+            "_stubbed_" + name, os.path.join(HERE, name + ".py"))
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        return module
+    finally:
+        for m, v in saved.items():
+            if v is None:
+                sys.modules.pop(m, None)
+            else:
+                sys.modules[m] = v
+
+
+class _Response:
+    def __init__(self, status):
+        self.status = status
+
+
+def _drive_one_page(engine_name, html, *, goto_error=None, status=None,
+                    retries=1):
+    """Run one engine's `_fetch_one_page` against a fake driver, no pool.
+
+    Returns (outcome or exception, number of navigations)."""
+    engine = _engine_with_stub_driver(engine_name)
+    navigations = []
+
+    def navigate(*a, **k):
+        navigations.append(1)
+        if goto_error:
+            raise goto_error
+        return _Response(status) if status is not None else None
+
+    class Page:
+        url = "https://www.bbb.org/us/tx/austin/profile/plumber/x-0825-1"
+
+        def goto(self, *a, **k):
+            return navigate()
+
+        def wait_for_timeout(self, ms):
+            pass
+
+        def query_selector_all(self, sel):
+            return []
+
+        def screenshot(self, **k):
+            pass
+
+    class Driver:
+        current_url = Page.url
+
+        def get(self, url):
+            navigate()
+
+    class Bridge:
+        def run(self, value):
+            return value
+
+    class Session:
+        page = Page()
+        driver = Driver()
+        bridge = Bridge()
+        relaunched = 0
+
+        def relaunch(self):
+            Session.relaunched += 1
+
+    with tempfile.TemporaryDirectory() as tmp:
+        class Args:
+            proxy_block_retries = 2
+            solve_captcha = "when-blocked"
+            twocaptcha_key = None
+            captcha_api = "v2"
+            min_score = 0.3
+            out = os.path.join(tmp, "o")
+            mode = "profile"
+            dump_html = None
+            pages = 1
+            retry_delay = 0
+        Args.retries = retries
+
+        engine.handle_captcha_if_present = lambda *a, **k: False
+        engine.time = types_ns(sleep=lambda s: None, time=__import__("time").time,
+                               monotonic=__import__("time").monotonic)
+        if engine_name == "playwright_scraper":
+            engine._snapshot = lambda page, url: html
+        else:
+            engine._snapshot = lambda session, url: html
+            engine._driver = lambda session: {
+                "count": lambda sel: 0, "sleep": lambda ms: None,
+                "content": lambda: html, "current_url": lambda: Page.url}
+        if engine_name == "puppeteer_scraper":
+            engine._content = lambda session: html
+        if goto_error is not None and engine_name == "playwright_scraper":
+            engine.PWError = type(goto_error)
+        if goto_error is not None and engine_name == "selenium_scraper":
+            engine.WebDriverException = type(goto_error)
+        import logging as _logging
+        _logging.disable(_logging.CRITICAL)
+        try:
+            outcome = engine._fetch_one_page(Session(), Args, None, 1, Page.url)
+        except Exception as e:  # noqa: BLE001 — the crash IS the finding
+            outcome = e
+        finally:
+            _logging.disable(_logging.NOTSET)
+    return outcome, len(navigations)
+
+
+def types_ns(**kw):
+    import types
+    return types.SimpleNamespace(**kw)
+
+
+ENGINE_NAMES = ("playwright_scraper", "puppeteer_scraper", "selenium_scraper")
+
+
+def check_the_mirror_engines_survive_a_block_with_no_proxy_pool():
+    """With no --proxy, `pool` is None. A blocked page used to reach
+    `mask(pool.current)` / `pool.advance` in the Selenium and pyppeteer
+    engines: AttributeError, a traceback, exit 1, and every row from earlier
+    pages lost. Playwright guarded it; now all three do."""
+    for name in ENGINE_NAMES:
+        outcome, navs = _drive_one_page(name, HARD_BLOCK_HTML)
+        check("%s: a block with no pool does not raise" % name,
+              not isinstance(outcome, Exception), repr(outcome))
+        if isinstance(outcome, Exception):
+            continue
+        check("%s: ...it is reported as blocked" % name,
+              outcome.blocked_by is not None and not outcome.ok,
+              "blocked_by=%r" % outcome.blocked_by)
+        check("%s: ...after a plain re-fetch on the same path" % name,
+              navs >= 2, "%d navigation(s)" % navs)
+
+        proxy_dead = Exception("net::ERR_PROXY_CONNECTION_FAILED at x")
+        outcome, navs = _drive_one_page(name, HARD_BLOCK_HTML,
+                                        goto_error=proxy_dead)
+        check("%s: a dead exit with no pool does not raise" % name,
+              not isinstance(outcome, Exception), repr(outcome))
+        if not isinstance(outcome, Exception):
+            check("%s: ...it is a load failure" % name, outcome.load_failed)
+
+
+def check_a_404_is_a_terminal_not_found():
+    """BBB's own 404 is an answer about the ADDRESS: no wait, no retry, no
+    block, and its own stop_reason. Read by status where the driver gives
+    one, and by BBB's own title where it does not (Selenium)."""
+    import page_flow as PF
+    import product_parser as P
+    equal("BBB's 404 page is NOT_FOUND by its title alone",
+          P.detect_page_state(SERVED_404_HTML, None), "not_found")
+    check("not_found is terminal, not blocked, not solved, not parsed",
+          not PF.should_retry("not_found") and not PF.counts_as_blocked("not_found")
+          and not PF.should_solve("not_found") and not PF.should_parse("not_found"))
+    for name in ENGINE_NAMES:
+        outcome, navs = _drive_one_page(name, SERVED_404_HTML)
+        check("%s: a served 404 does not raise" % name,
+              not isinstance(outcome, Exception), repr(outcome))
+        if isinstance(outcome, Exception):
+            continue
+        equal("%s: a served 404 is fetched once and not retried" % name, navs, 1)
+        equal("%s: ...and stops the run as not_found" % name,
+              (outcome.ok, outcome.failure_reason), (False, "not_found"))
+
+    # The status must reach the classifier: a page with BBB's chrome but no
+    # title or payload is only a 404 because the response said so.
+    bare = SERVED_404_HTML.replace("Page not found", "Somewhere")
+    equal("without the title and without a status the page is unknown",
+          P.detect_page_state(bare, None), "unknown")
+    for name in ("playwright_scraper", "puppeteer_scraper"):
+        outcome, navs = _drive_one_page(name, bare, status=404)
+        check("%s: the HTTP status reaches the classifier" % name,
+              not isinstance(outcome, Exception)
+              and getattr(outcome, "failure_reason", None) == "not_found",
+              repr(getattr(outcome, "state", outcome)))
+
+
+def check_the_engines_classify_with_a_status_argument():
+    """Every classify call site passes a status positionally, so an engine
+    that drops it is a decision visible in the source (Selenium has none
+    to pass and says so with a literal None)."""
+    for name in ENGINE_NAMES:
+        tree = ast.parse(open(os.path.join(HERE, name + ".py"),
+                              encoding="utf-8").read())
+        calls = [n for n in ast.walk(tree) if isinstance(n, ast.Call)
+                 and getattr(n.func, "attr", getattr(n.func, "id", None))
+                 in ("classify", "_classify")]
+        check("%s: classify call sites found" % name, len(calls) >= 3,
+              "found %d" % len(calls))
+        bad = []
+        for c in calls:
+            if getattr(c.func, "attr", None) == "classify":
+                if len(c.args) < 2:
+                    bad.append(c.lineno)
+            elif getattr(c.func, "id", None) == "_classify" and c.args and \
+                    isinstance(c.args[0], ast.Name) and c.args[0].id == "page":
+                continue  # the helper's own definition forwards it
+            elif len(c.args) < 3:
+                bad.append(c.lineno)
+        check("%s: every classify call passes a status" % name, not bad,
+              "lines %s" % bad)
+        if name != "selenium_scraper":
+            def status_arg(c):
+                index = 1 if getattr(c.func, "attr", None) == "classify" else 2
+                return c.args[index] if len(c.args) > index else None
+            literal_none = [c.lineno for c in calls
+                            if isinstance(status_arg(c), ast.Constant)]
+            check("%s: no call site throws the status away" % name,
+                  not literal_none, "lines %s" % literal_none)
+
+
+def _parse_engine_args(name, argv, env=None):
+    """Run an engine's parse_args with a stubbed driver: (args, exit, stderr).
+
+    `env` is applied as environment variables (the same path a `.env` takes
+    through env_config.apply); the developer's own `.env` is not read."""
+    import env_config
+    engine = _engine_with_stub_driver(name)
+    saved_argv, saved_load = sys.argv, env_config.load_env
+    saved_env = {k: os.environ.pop(k) for k in list(os.environ)
+                 if k.startswith("BBB_") or k == "TWOCAPTCHA_KEY"}
+    err = io.StringIO()
+    code, args = None, None
+    try:
+        env_config.load_env = lambda *a, **k: None
+        os.environ.update(env or {})
+        sys.argv = [name + ".py"] + argv
+        with contextlib.redirect_stderr(err), \
+                contextlib.redirect_stdout(io.StringIO()):
+            try:
+                args = engine.parse_args()
+            except SystemExit as e:
+                code = e.code
+    finally:
+        sys.argv = saved_argv
+        env_config.load_env = saved_load
+        for k in (env or {}):
+            os.environ.pop(k, None)
+        os.environ.update(saved_env)
+    return args, code, err.getvalue()
+
+
+def check_a_url_from_the_environment_does_not_block_the_query_flags():
+    """BBB_URL is a DEFAULT. A user who copied `.env` from the example and
+    typed `--text plumber --location "Austin, TX"` used to get exit 2,
+    "--url already carries the whole query"."""
+    env = {"BBB_URL": "https://www.bbb.org/search?find_country=USA&find_text=x&find_loc=y"}
+    for name in ENGINE_NAMES:
+        args, code, err = _parse_engine_args(
+            name, ["--text", "plumber", "--location", "Austin, TX"], env)
+        check("%s: query flags replace a URL from the environment" % name,
+              code is None and args is not None and "find_text=plumber" in args.url,
+              err.strip()[-200:])
+        args, code, err = _parse_engine_args(name, [], env)
+        check("%s: ...and with no flags the environment URL is used" % name,
+              code is None and args is not None and "find_text=x" in args.url,
+              err.strip()[-200:])
+        args, code, err = _parse_engine_args(
+            name, ["--url", env["BBB_URL"], "--text", "plumber"])
+        check("%s: a TYPED --url with --text is still refused" % name,
+              code == 2 and "already carries the whole query" in err, err[-200:])
+    text = open(os.path.join(HERE, ".env.example"), encoding="utf-8").read()
+    check(".env.example ships BBB_URL commented out, not as a default",
+          not re.search(r"^BBB_URL=", text, re.M)
+          and re.search(r"^#\s*BBB_URL=", text, re.M), "")
+
+
+def check_counting_flags_refuse_negative_values():
+    """A negative --pages, --delay or --retry-delay used to be accepted:
+    `range()` runs zero times and `time.sleep` raises mid-run. Refused with
+    an argparse error that names the flag, in every engine."""
+    base = ["--url", "https://www.bbb.org/search?find_country=USA&find_text=x"]
+    cases = (("--pages", "0"), ("--pages", "-1"), ("--delay", "-1"),
+             ("--retry-delay", "-0.5"), ("--concurrency", "0"),
+             ("--proxy-block-retries", "-1"))
+    for name in ENGINE_NAMES:
+        for flag, value in cases:
+            args, code, err = _parse_engine_args(name, base + [flag, value])
+            check("%s: %s %s is a usage error naming the flag" % (name, flag, value),
+                  code == 2 and ("argument %s:" % flag) in err, err[-200:])
+        args, code, err = _parse_engine_args(
+            name, base + ["--delay", "0", "--retry-delay", "0",
+                          "--proxy-block-retries", "0", "--pages", "2"])
+        check("%s: zero waits and zero block retries stay legal" % name,
+              code is None, err[-200:])
+    import env_config
+    import scraper_api_client as S
+    saved_argv, saved_load = sys.argv, env_config.load_env
+    try:
+        env_config.load_env = lambda *a, **k: None
+        for value, legal in (("0", True), ("1", True), ("-1", False)):
+            sys.argv = ["scraper_api_client.py", "--url", base[1],
+                        "--retries", value]
+            err, code = io.StringIO(), None
+            try:
+                with contextlib.redirect_stderr(err):
+                    S.parse_args()
+            except SystemExit as e:
+                code = e.code
+            check("scraper_api_client --retries %s is %s"
+                  % (value, "legal" if legal else "refused"),
+                  (code is None) == legal
+                  and (legal or "argument --retries:" in err.getvalue()),
+                  err.getvalue()[-200:])
+    finally:
+        sys.argv, env_config.load_env = saved_argv, saved_load
+
+
+def check_no_private_citations_in_shipped_files():
+    """Public files state their reasons in their own words. A pointer into a
+    document the reader cannot open (an instruction file, or a numbered
+    section of one) explains nothing. Tokens are assembled from pieces so
+    this file does not match itself."""
+    banned = re.compile("|".join((
+        re.escape("CLAUDE" + ".md"), "claude" + "_2scraper",
+        "2scraper" + "_repo_rules", "play" + "book", "\u00a7")))
+    hits = []
+    for path in _tracked_files():
+        if path.suffix.lower() in (".png", ".jpg", ".ico", ".gz", ".zip"):
+            continue
+        try:
+            text = path.read_text(encoding="utf-8")
+        except (UnicodeDecodeError, OSError):
+            continue
+        for lineno, line in enumerate(text.splitlines(), 1):
+            if banned.search(line):
+                hits.append("%s:%d" % (path.relative_to(HERE), lineno))
+    check("no shipped file cites a private instruction file or its sections",
+          not hits, ", ".join(hits[:10]))
+
+
+def _tracked_files():
+    import pathlib
+    root = pathlib.Path(HERE)
+    try:
+        out = subprocess.run(["git", "ls-files"], cwd=HERE, capture_output=True,
+                             text=True, check=True).stdout.split("\n")
+        files = [root / f for f in out if f]
+    except (OSError, subprocess.CalledProcessError):
+        files = [p for p in root.rglob("*") if p.is_file()
+                 and ".git" not in p.relative_to(root).parts]
+    return [f for f in files if f.is_file()]
+
+
+def check_credential_scan_is_relative_to_the_repo_and_never_scans_nothing():
+    """The scan skipped a path whose ABSOLUTE parts held `venv`, so a clone
+    under ~/venv/ scanned 0 files and printed "ok". Exclusions are judged
+    relative to the repository, a zero-file scan fails, and a `.env.bak`
+    holding a key is read whatever its suffix."""
+    ci_dir = os.path.join(HERE, ".github")
+    if not os.path.isdir(ci_dir):
+        skip("credential scan location", "no .github in this tree")
+        return
+    import shutil
+    key = "".join("ab" for _ in range(16))
+    with tempfile.TemporaryDirectory() as tmp:
+        clone = os.path.join(tmp, "venv", "build", "repo")
+        os.makedirs(os.path.join(clone, ".github"))
+        shutil.copy(os.path.join(ci_dir, "ci_checks.py"),
+                    os.path.join(clone, ".github", "ci_checks.py"))
+        with open(os.path.join(clone, "notes.py"), "w") as f:
+            f.write("x = 1\n")
+        run = lambda: subprocess.run(
+            [sys.executable, os.path.join(clone, ".github", "ci_checks.py"),
+             "--secret-check"], capture_output=True, text=True, cwd=clone)
+        r = run()
+        check("a clean clone under a `venv` parent scans files and passes",
+              r.returncode == 0 and " 0 files" not in r.stdout,
+              (r.stdout + r.stderr)[-300:])
+        with open(os.path.join(clone, ".env.bak"), "w") as f:
+            f.write("TWOCAPTCHA_KEY=%s\n" % key)
+        r = run()
+        check("...and a key in an untracked .env.bak there fails the scan",
+              r.returncode != 0 and ".env.bak" in r.stdout + r.stderr,
+              (r.stdout + r.stderr)[-300:])
+        os.remove(os.path.join(clone, ".env.bak"))
+        with open(os.path.join(clone, "fixture.json"), "w") as f:
+            f.write('{"note": "%s"}\n' % key)
+        r = run()
+        check("...and so does one in a .json fixture",
+              r.returncode != 0 and "fixture.json" in r.stdout + r.stderr,
+              (r.stdout + r.stderr)[-300:])
+    # A scan whose exclusions matched everything must fail, not say "ok".
+    import importlib.util
+    spec = importlib.util.spec_from_file_location(
+        "_ci_checks_probe", os.path.join(ci_dir, "ci_checks.py"))
+    ci = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(ci)
+    ci.scanned_files = lambda: iter(())
+    with contextlib.redirect_stdout(io.StringIO()):
+        failed = ci.secret_check()
+    check("a scan that reads 0 files fails instead of saying ok",
+          any("0 files" in f for f in failed), repr(failed))
+
+
+def check_dump_and_capture_shapes_are_ignored():
+    """`--dump-html X --pages 3` writes X.page3, which `*.json` does not
+    cover; a raw page saved at the top of the repo, or a live-run directory,
+    is one `git add -A` from a commit."""
+    try:
+        subprocess.run(["git", "rev-parse"], cwd=HERE, capture_output=True,
+                       check=True)
+    except (OSError, subprocess.CalledProcessError):
+        skip("gitignore shapes", "not a git checkout")
+        return
+    ignored = lambda p: subprocess.run(["git", "check-ignore", "-q", p],
+                                       cwd=HERE).returncode == 0
+    for path in ("x.page3", "canary_dump.json.page3", "live/x.html",
+                 "root.html", "out/run.json", ".env.bak", ".env.local"):
+        check("%s is ignored" % path, ignored(path))
+    for path in ("landing.html", "sample_output.json", "sample_output.csv",
+                 ".env.example", ".github/workflows/tests.yml",
+                 "tests/test_smoke.py", "smoke_test.py"):
+        check("%s is NOT ignored" % path, not ignored(path))
 
 
 CHECKS = [v for k, v in sorted(globals().items()) if k.startswith("check_")]
