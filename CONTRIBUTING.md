@@ -100,7 +100,7 @@ Then the rest of the presentation, in the order that matters:
 1. `python3 smoke_test.py` green, and the canary dispatched at least once —
    including its SKIP branch, which is what runs when the
    `BBB_CDP_ENDPOINT` secret is absent. Note that the canary's LISTING job
-   runs daily with no secrets at all and is expected to be green — that half
+   runs weekly (Mondays) with no secrets at all and is expected to be green — that half
    needs no credentials, and a green badge there is exactly the claim the
    README makes. Only the PROFILE job skips without a secret, because it
    fetches a Cloudflare-gated page and a GitHub runner is a datacenter

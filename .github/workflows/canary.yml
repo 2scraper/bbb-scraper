@@ -3,7 +3,7 @@
 #
 # This canary is unusual for this family, and the reason is worth stating at
 # the top: **the listing path needs no credentials at all**, so it really can
-# run nightly from a bare GitHub runner and be green.
+# run weekly from a bare GitHub runner and be green.
 #
 # BBB renders its listings out of its own JSON endpoint, and that endpoint is
 # not behind Cloudflare. Measured 2026-09-16 from a datacenter VPS that gets
@@ -12,8 +12,7 @@
 # exactly the case this proves.
 #
 # The PROFILE path is different — it fetches a Cloudflare-gated page — so that
-# half needs a Scraping Browser endpoint, and runs only on the weekly (Monday)
-# schedule and on a manual dispatch, since each run bills. Without the secret it FAILS with an
+# half needs a Scraping Browser endpoint. Without the secret it FAILS with an
 # ::error:: naming the secret rather than going green: a skipped job did not
 # test the site, and a green badge over an untested path is a claim nobody
 # measured. Exit 3 (blocked), exit 5 (never reached the page) and zero rows
@@ -30,9 +29,6 @@ on:
   schedule:
     # 05:40 UTC. Not on the hour: every scheduled workflow on GitHub fires at
     # :00 and the queue there is long.
-    - cron: "40 5 * * *"
-    # Mondays only: the paid job (profile) runs on this
-    # schedule (each run bills); the free jobs keep the daily one above.
     - cron: "40 5 * * 1"
   workflow_dispatch:
 
@@ -173,8 +169,6 @@ jobs:
 
   profile:
     name: profile (needs a Scraping Browser secret)
-    # Paid path: weekly schedule or a manual dispatch only.
-    if: github.event_name != 'schedule' || github.event.schedule == '40 5 * * 1'
     runs-on: ubuntu-latest
     timeout-minutes: 20
     env:

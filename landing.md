@@ -24,7 +24,7 @@ Full numbers are in the [repository README](https://github.com/2scraper/bbb-scra
 - Three modes: a keyword **search**, a **category** listing, or a single business **profile**
 - Reads BBB's own embedded state payload (`window.__PRELOADED_STATE__`) — the same object its endpoint returns — so there is no fragile DOM scraping anywhere in the primary path
 - JSON and CSV export, a documented 53-column `Business` schema, and a `.meta.json` sidecar on every run recording status, pages completed, and **BBB's own result arithmetic**
-- 340 offline checks, and a daily canary that runs a real 3-page scrape **with no secrets**
+- 340 offline checks, and a weekly canary that runs a real 3-page scrape **with no secrets**
 - Optional 2Captcha integration, wired in but never required to get started
 
 ## Three things about BBB worth knowing before you start
