@@ -272,10 +272,10 @@ installs each engine in its own virtualenv and fails if that engine's group
 reports one, because "skipped, engine absent" reads identically to a real
 import error.
 
-The [canary](.github/workflows/canary.yml) runs a real 3-page listing daily —
+The [canary](.github/workflows/canary.yml) runs a real 3-page listing weekly (Mondays) —
 **with no secrets**, because the listing path needs none, which is also what
-keeps that claim honest. The profile half bills a Scraping Browser session, so it runs weekly
-(Mondays) and on a manual dispatch, and fails, naming the secret, when no
+keeps that claim honest. The profile half runs on the same schedule through a Scraping Browser
+session, and fails, naming the secret, when no
 `BBB_CDP_ENDPOINT` secret is set.
 
 ---

@@ -12,8 +12,7 @@ When it does, the release notes lead with it.
 
 ### Changed
 
-- CI only: the canary's paid `profile` job now runs weekly (Mondays 05:40 UTC)
-  and on a manual dispatch; the free `listing` job still runs daily.
+- CI only: the whole canary, free and paid jobs alike, now runs weekly (Mondays 05:40 UTC) and on a manual dispatch; the daily schedule is removed.
 
 ## [1.1.0] — 2026-10-15
 
