@@ -10,6 +10,11 @@ When it does, the release notes lead with it.
 
 ## [Unreleased]
 
+### Changed
+
+- CI only: the canary's paid `profile` job now runs weekly (Mondays 05:40 UTC)
+  and on a manual dispatch; the free `listing` job still runs daily.
+
 ## [1.1.0] — 2026-10-15
 
 > **Behaviour change:** `--retries 0` is now a usage error (exit 2). It used

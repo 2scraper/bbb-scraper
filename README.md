@@ -274,7 +274,8 @@ import error.
 
 The [canary](.github/workflows/canary.yml) runs a real 3-page listing daily —
 **with no secrets**, because the listing path needs none, which is also what
-keeps that claim honest. The profile half skips with a notice when no
+keeps that claim honest. The profile half bills a Scraping Browser session, so it runs weekly
+(Mondays) and on a manual dispatch, and fails, naming the secret, when no
 `BBB_CDP_ENDPOINT` secret is set.
 
 ---
