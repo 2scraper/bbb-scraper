@@ -1,4 +1,4 @@
-# bbb-scraper
+# Better Business Bureau Scraper — Business Listings, Grades and Complaints in Python
 
 [![release](https://img.shields.io/github/v/release/2scraper/bbb-scraper)](https://github.com/2scraper/bbb-scraper/releases)
 [![tests](https://github.com/2scraper/bbb-scraper/actions/workflows/tests.yml/badge.svg)](https://github.com/2scraper/bbb-scraper/actions/workflows/tests.yml)
@@ -7,6 +7,8 @@
 [![licence](https://img.shields.io/badge/licence-MIT-green)](LICENSE)
 ![engines](https://img.shields.io/badge/engines-playwright%20%7C%20selenium%20%7C%20pyppeteer-lightgrey)
 ![listings run without an account](https://img.shields.io/badge/search%20%26%20category-no%20account%20needed-brightgreen)
+
+**Better Business Bureau scraper** — an open-source (MIT) Python tool that reads bbb.org search and category listings and business profiles and writes name, address, phone numbers, BBB letter grade, accreditation and, on a profile, complaint counts to JSON or CSV. Measured on 2026-09-16 from a datacenter VPS, search and category listings needed no account, key or proxy, because they come from BBB's own JSON endpoint. Use it to build a business directory dataset or compare two runs with `diff_runs.py`.
 
 Scrapes business listings and business profiles from the **Better Business
 Bureau** ([bbb.org](https://www.bbb.org)) — name, address, phone numbers, BBB
@@ -295,3 +297,20 @@ jurisdiction are your responsibility as the operator. `--delay` defaults to 2
 seconds; leave it there unless you have a reason.
 
 MIT licensed. Not affiliated with or endorsed by the Better Business Bureau.
+
+## Guides
+
+- [How to run the 2scraper scrapers: setup, proxies, exit codes and access modes](https://2captcha.com/h/how-to-run-2scraper-open-source-scrapers) — installation, `.env`, `.meta.json` for the whole family.
+
+## Related scrapers
+
+Same CLI conventions, same output contract (one row per item, JSON or CSV, a `.meta.json` sidecar and shared exit codes):
+
+- [Flippa scraper](https://github.com/2scraper/flippa-scraper) — Online businesses for sale on Flippa
+- [G2 scraper](https://github.com/2scraper/g2-scraper) — Categories, product pages and pricing pages
+- [Google Play scraper](https://github.com/2scraper/googleplay-scraper) — Apps, installs, rating histograms and unbounded reviews…
+- [Just Join IT scraper](https://github.com/2scraper/justjoin-scraper) — Polish IT job offers with real salaries, seniority, skill…
+- [Mercor scraper](https://github.com/2scraper/mercor-scraper) — AI-talent marketplace: contract roles, rates, eligibility…
+- [Wellfound scraper](https://github.com/2scraper/wellfound-scraper) — Startup jobs from Wellfound with salary and equity ranges…
+
+All scrapers: [github.com/2scraper](https://github.com/2scraper) · Need another site? [Open a request](https://github.com/2scraper/.github/issues/new?title=%5BScraper%20request%5D%20)
