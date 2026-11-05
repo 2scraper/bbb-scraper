@@ -27,9 +27,9 @@ name: canary
 
 on:
   schedule:
-    # 05:40 UTC. Not on the hour: every scheduled workflow on GitHub fires at
+    # 03:07 UTC. Not on the hour: every scheduled workflow on GitHub fires at
     # :00 and the queue there is long.
-    - cron: "40 5 * * 1"
+    - cron: "7 3 * * 1"
   workflow_dispatch:
 
 permissions:
