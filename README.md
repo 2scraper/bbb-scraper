@@ -1,4 +1,4 @@
-# Better Business Bureau Scraper — Business Listings, Grades and Complaints in Python
+# BBB Scraper — Better Business Bureau Listings, Grades and Complaints in Python
 
 [![release](https://img.shields.io/github/v/release/2scraper/bbb-scraper)](https://github.com/2scraper/bbb-scraper/releases)
 [![tests](https://github.com/2scraper/bbb-scraper/actions/workflows/tests.yml/badge.svg)](https://github.com/2scraper/bbb-scraper/actions/workflows/tests.yml)
@@ -8,7 +8,7 @@
 ![engines](https://img.shields.io/badge/engines-playwright%20%7C%20selenium%20%7C%20pyppeteer-lightgrey)
 ![listings run without an account](https://img.shields.io/badge/search%20%26%20category-no%20account%20needed-brightgreen)
 
-**Better Business Bureau scraper** — an open-source (MIT) Python tool that reads bbb.org search and category listings and business profiles and writes name, address, phone numbers, BBB letter grade, accreditation and, on a profile, complaint counts to JSON or CSV. Measured on 2026-09-16 from a datacenter VPS, search and category listings needed no account, key or proxy, because they come from BBB's own JSON endpoint. Use it to build a business directory dataset or compare two runs with `diff_runs.py`.
+**BBB scraper** — an open-source (MIT) Python tool that reads Better Business Bureau (bbb.org) search and category listings and business profiles and writes name, address, phone numbers, BBB letter grade, accreditation and, on a profile, complaint counts to JSON or CSV. Measured on 2026-09-16 from a datacenter VPS, search and category listings needed no account, key or proxy, because they come from BBB's own JSON endpoint. Use it to build a business directory dataset or compare two runs with `diff_runs.py`.
 
 Scrapes business listings and business profiles from the **Better Business
 Bureau** ([bbb.org](https://www.bbb.org)) — name, address, phone numbers, BBB
